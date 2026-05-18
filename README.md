@@ -7,7 +7,7 @@
 | 方蕴仪 |https://github.com/gloriaaa0312 ||
 | 洪贝贝 |https://github.com/handingna||
 | 唐益  |https://github.com/maeassar||
-| 徐治平 |https://github.com/fwunai||
+| 徐治平 |https://github.com/fwunai|51285903022|
 | 朱文韬 | https://github.com/GentleCold||
 | 仲韦萱 |https://github.com/bouboo1||
 | 赖鑫  |https://github.com/specia1weak||
