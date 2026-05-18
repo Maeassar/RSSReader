@@ -4,7 +4,7 @@
 | 姓名  | GitHub账号 | 学号 |
 |-----| ---------- | ---- |
 | 唐小卉 |https://github.com/TheadoraTang |51285903071|
-| 方蕴仪 |https://github.com/gloriaaa0312 ||
+| 方蕴仪 |https://github.com/gloriaaa0312 |51275903070|
 | 洪贝贝 |https://github.com/handingna||
 | 唐益  |https://github.com/maeassar||
 | 徐治平 |https://github.com/fwunai||
@@ -17,7 +17,7 @@
 | 成员  | 负责时间          | 负责模块                       | 实际工作内容                                                             | 最终实现效果                                      |
 |-----|---------------|----------------------------| ------------------------------------------------------------------ | ------------------------------------------- |
 | 唐小卉 | Week12、Week13 | 项目初始化和分工，RSS Reader 后端核心系统 | 项目初始化（Vue/FastAPI/SQLite）、SQLite 数据模型设计、RSS/Atom Feed解析、Feed API开发 | 完成 RSS Reader 后端基础架构，支持 RSS 解析、数据存储与 API 提供 |
-| 成员2 | Week13        | RSS Reader 前端阅读系统+笔记功能开发   | 基础阅读页面开发、Feed列表与文章展示UI、笔记功能开发                                      | 用户可以浏览 Feed、阅读文章并记录笔记                       |
+| 方蕴仪 | Week13        | RSS Reader 前端阅读系统+笔记功能开发   | 基础阅读页面开发、Feed列表与文章展示UI、笔记功能开发                                      | 用户可以浏览 Feed、阅读文章并记录笔记                       |
 | 成员3 | Week14、18     | 导出与项目工程化系统                 | 笔记与文章单篇/多篇导出、Markdown/PDF 导出、Bug修复与联调、Docker部署、项目文档整理              | 支持文章导出与项目部署，实现项目最终交付                        |
 | 成员4 | Week14        | RSS 订阅同步系统                 | OPML 导入导出功能、Feed Sync 同步机制、更新内容存储进 SQLite、Feed 更新调度机制              | 支持 RSS 自动同步、订阅迁移以及数据自动更新                    |
 | 成员5 | Week15        | 内容处理与阅读优化系统                | HTML 内容清洗模块、Markdown 转换模块、阅读主题与样式系统、文章详情渲染优化                       | 提供干净的阅读内容与更好的阅读体验                           |
