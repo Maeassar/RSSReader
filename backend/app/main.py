@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.database import initialize_database
 from app.routers import ai, articles, export, feeds, logs, notes, opml, stats, tags
 
 app = FastAPI(
     title="RSSReader API",
-    description="Mock-first RSS reader API with reserved SQLite repository interfaces.",
+    description="RSS/Atom reader API backed by SQLite.",
     version="0.1.0",
 )
 
@@ -28,7 +29,12 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
 
 
+@app.on_event("startup")
+def startup() -> None:
+    initialize_database()
+
+
 @app.get("/api/health")
 def health_check() -> dict[str, str]:
-    return {"status": "ok", "storage": "mock", "database": "reserved"}
+    return {"status": "ok", "storage": "sqlite", "database": "app.db"}
 

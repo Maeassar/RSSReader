@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas import FeedCreate, FeedRead, FeedUpdate, OperationResult
+from app.schemas import ArticleRead, FeedCreate, FeedRead, FeedUpdate, OperationResult
+from app.services import article_service
 from app.services import feed_service
 
 router = APIRouter()
@@ -13,7 +14,23 @@ def list_feeds():
 
 @router.post("", response_model=FeedRead)
 def create_feed(payload: FeedCreate):
-    return feed_service.create_feed(payload)
+    try:
+        return feed_service.create_feed(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/sync-all", response_model=list[FeedRead])
+def sync_all_feeds():
+    return feed_service.sync_all_feeds()
+
+
+@router.get("/{feed_id}", response_model=FeedRead)
+def get_feed(feed_id: int):
+    try:
+        return feed_service.get_feed(feed_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.put("/{feed_id}", response_model=FeedRead)
@@ -26,8 +43,11 @@ def update_feed(feed_id: int, payload: FeedUpdate):
 
 @router.delete("/{feed_id}", response_model=OperationResult)
 def delete_feed(feed_id: int):
-    feed_service.delete_feed(feed_id)
-    return OperationResult(message="Feed deleted from mock repository.")
+    try:
+        feed_service.delete_feed(feed_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return OperationResult(message="Feed deleted.")
 
 
 @router.post("/{feed_id}/sync", response_model=FeedRead)
@@ -35,10 +55,14 @@ def sync_feed(feed_id: int):
     try:
         return feed_service.sync_feed(feed_id)
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{feed_id}/entries", response_model=list[ArticleRead])
+def list_feed_entries(feed_id: int):
+    try:
+        feed_service.get_feed(feed_id)
+    except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post("/sync-all", response_model=list[FeedRead])
-def sync_all_feeds():
-    return feed_service.sync_all_feeds()
+    return article_service.list_articles(feed_id=feed_id)
 

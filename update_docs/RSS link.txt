@@ -1,0 +1,2 @@
+https://openai.com/blog/rss.xml
+https://proxy.wavpub.com/pie.xml

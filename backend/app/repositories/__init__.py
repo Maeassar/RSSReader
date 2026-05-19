@@ -1,4 +1,4 @@
-from app.repositories.mock_repository import repository
+from app.repositories.sqlite_repository import repository
 
 __all__ = ["repository"]
 

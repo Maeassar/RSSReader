@@ -5,6 +5,10 @@ def list_feeds():
     return repository.list_feeds()
 
 
+def get_feed(feed_id):
+    return repository.get_feed(feed_id)
+
+
 def create_feed(payload):
     return repository.create_feed(payload)
 
