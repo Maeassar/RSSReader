@@ -17,10 +17,6 @@ body {
   background: #f5f7fb;
 }
 
-.content-shell {
-  min-height: calc(100vh - 56px);
-}
-
 .top-nav {
   height: 56px;
   display: flex;
@@ -29,13 +25,6 @@ body {
   padding: 0 20px;
   background: #ffffff;
   border-bottom: 1px solid #e5e7eb;
-}
-
-.nav {
-  width: 64px;
-  background: #ffffff;
-  border-right: 1px solid #e5e7eb;
-  overflow: visible;
 }
 
 .brand {
@@ -68,59 +57,6 @@ body {
 
 .top-actions .el-button .el-icon {
   font-size: 22px;
-}
-
-.nav-menu {
-  border-right: 0;
-  padding-top: 8px;
-  overflow: visible;
-}
-
-.nav-menu .el-menu-item {
-  position: relative;
-  width: 64px;
-  height: 58px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 !important;
-}
-
-.nav-menu .el-menu-item .el-icon {
-  margin-right: 0;
-  font-size: 24px;
-}
-
-.nav-menu .el-menu-item span {
-  display: none;
-}
-
-.nav-menu .el-menu-item::after {
-  content: attr(title);
-  position: absolute;
-  left: 56px;
-  top: 50%;
-  z-index: 20;
-  padding: 6px 10px;
-  border-radius: 4px;
-  background: #1f2937;
-  color: #ffffff;
-  font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
-  box-shadow: 0 8px 18px rgb(15 23 42 / 18%);
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(-50%) translateX(-4px);
-  transition: opacity 0.08s ease, transform 0.08s ease, visibility 0s linear 0.08s;
-}
-
-.nav-menu .el-menu-item:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(-50%) translateX(0);
-  transition-delay: 0s;
 }
 
 .main {
@@ -199,10 +135,6 @@ body {
   .reader-grid {
     grid-template-columns: 1fr;
     height: auto;
-  }
-
-  .nav {
-    width: 64px;
   }
 }
 
