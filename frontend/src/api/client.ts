@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+const desktopApiBaseUrl = window.rssReaderDesktop?.apiBaseUrl
+
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: desktopApiBaseUrl ? `${desktopApiBaseUrl}/api` : '/api',
   timeout: 10000
 })
 

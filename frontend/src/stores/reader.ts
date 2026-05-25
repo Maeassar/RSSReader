@@ -13,11 +13,29 @@ export const useReaderStore = defineStore('reader', {
     async loadAll() {
       this.loading = true
       try {
-        const [feeds, articles, tags] = await Promise.all([rssApi.feeds(), rssApi.articles(), rssApi.tags()])
-        this.feeds = feeds
-        this.articles = articles
-        this.tags = tags
-        this.selectedArticle = articles[0] ?? null
+        const [feeds, articles, tags] = await Promise.allSettled([rssApi.feeds(), rssApi.articles(), rssApi.tags()])
+
+        if (feeds.status === 'fulfilled') {
+          this.feeds = feeds.value
+        } else {
+          console.error('Failed to load feeds', feeds.reason)
+        }
+
+        if (articles.status === 'fulfilled') {
+          this.articles = articles.value
+        } else {
+          console.error('Failed to load articles', articles.reason)
+          this.articles = []
+        }
+
+        if (tags.status === 'fulfilled') {
+          this.tags = tags.value
+        } else {
+          console.error('Failed to load tags', tags.reason)
+          this.tags = []
+        }
+
+        this.selectedArticle = this.articles[0] ?? null
       } finally {
         this.loading = false
       }

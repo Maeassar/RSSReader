@@ -1,14 +1,18 @@
-from pathlib import Path
 import sqlite3
+import os
+import sys
+from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DB_PATH = BASE_DIR / "app.db"
-SCHEMA_PATH = BASE_DIR / "schema.sql"
+PACKAGED_BASE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+DB_PATH = Path(os.environ.get("RSSREADER_DB_PATH", BASE_DIR / "app.db")).expanduser()
+SCHEMA_PATH = PACKAGED_BASE_DIR / "schema.sql"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 
 def get_connection() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

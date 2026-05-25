@@ -52,3 +52,20 @@
 
 
 
+
+## 2026-05-22
+
+- Used AI Coding Agent to implement the Electron desktop packaging plan for cross-platform RSSReader delivery.
+- Added an Electron main process and preload bridge, plus root scripts for desktop development and installer builds.
+- Added a FastAPI desktop server entry and PyInstaller build helper so the backend can run as a bundled local executable.
+- Updated SQLite configuration to support `RSSREADER_DB_PATH`, allowing desktop runtime data to live in the OS user data directory.
+- Updated frontend API configuration so the desktop app can inject the local backend URL while browser development keeps the Vite `/api` proxy.
+- Remaining limitations: platform installer signing/notarization is not configured, and macOS/Linux package verification still needs to be run on those systems.
+
+## 2026-05-25
+
+- 使用 AI Coding Agent 协助重新整理项目说明文档。
+- 将 `INIT.md` 重写为英文项目需求与架构说明，覆盖 RSSReader 功能、跨平台桌面端目标和 Vue/FastAPI/SQLite/Electron/PyInstaller 技术栈。
+- 将 `docs/NOTES.md` 重写为中文开发说明，补充功能设计、启动方式、桌面端数据库位置、接口测试和 PR 流程。
+- 在 README 中追加唐益 Week13/Week14 macOS 桌面端功能测试职责，以及成员分工概览修订说明。
+- 当前限制：README 原有中文内容存在历史编码显示问题，本次采用追加修订小节而不是整体重写，以减少对原始 README 的破坏。

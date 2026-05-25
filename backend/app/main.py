@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import initialize_database
+from app.database import DB_PATH, initialize_database
 from app.routers import ai, articles, export, feeds, logs, notes, opml, stats, tags
 
 app = FastAPI(
@@ -12,7 +12,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "app://rssreader"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,5 +36,5 @@ def startup() -> None:
 
 @app.get("/api/health")
 def health_check() -> dict[str, str]:
-    return {"status": "ok", "storage": "sqlite", "database": "app.db"}
+    return {"status": "ok", "storage": "sqlite", "database": str(DB_PATH)}
 

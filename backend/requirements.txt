@@ -7,4 +7,5 @@ beautifulsoup4==4.12.3
 readability-lxml==0.8.1
 markdownify==0.14.1
 SQLAlchemy==2.0.36
-
+pyinstaller==6.20.0
+backports.tarfile==1.2.0

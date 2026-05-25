@@ -1,207 +1,114 @@
-# RSSReader 项目初始化说明
-
-本文档用于说明 RSSReader 的本地开发环境初始化、依赖安装、数据库初始化和前后端启动方式。
-
-## 环境要求
-
-建议使用以下环境：
-
-- Python 3.10+
-- Node.js 22+
-- npm
-- SQLite
-
-## 后端初始化
-
-进入后端目录：
-
-```bash
-cd backend
-```
-
-安装 Python 依赖：
-
-```bash
-pip install -r requirements.txt
-```
-
-初始化 SQLite 数据库：
-
-```bash
-python init_db.py
-```
-
-执行后会创建或更新本地数据库文件：
-
-```text
-backend/app.db
-```
-
-`app.db` 是本地运行数据，不应该提交到 Git 仓库。
-
-## 启动后端
-
-在 `backend` 目录下运行：
-
-```bash
-uvicorn app.main:app --reload
-```
-
-后端服务地址：
-
-```text
-http://127.0.0.1:8000
-```
-
-API 文档地址：
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-健康检查接口：
-
-```text
-GET /api/health
-```
-
-## 前端初始化
-
-进入前端目录：
-
-```bash
-cd frontend
-```
-
-安装依赖：
-
-```bash
-npm install
-```
-
-## 启动前端
-
-在 `frontend` 目录下运行：
-
-```bash
-npm run dev
-```
-
-前端服务地址：
-
-```text
-http://127.0.0.1:5173
-```
-
-## 数据库说明
-
-数据库初始化相关文件：
-
-```text
-backend/schema.sql
-backend/init_db.py
-backend/app/database.py
-```
-
-后端主要使用以下表：
-
-- `feeds`：保存 RSS/Atom 订阅源信息。
-- `entries`：保存从 RSS/Atom 中解析出的文章条目。
-- `feed_fetch_logs`：保存 Feed 抓取和同步日志。
-- `notes`：为文章笔记功能预留。
-- `ai_results`：为 AI 摘要和翻译结果预留。
-
-如果修改了表结构，可以删除本地数据库后重新初始化：
-
-```bash
-cd backend
-python init_db.py
-```
-
-## 常用 API
-
-后端启动后，可以在 Swagger 页面测试接口：
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-常用接口：
-
-- `GET /api/health`
-- `GET /api/feeds`
-- `POST /api/feeds`
-- `GET /api/feeds/{feed_id}`
-- `POST /api/feeds/{feed_id}/sync`
-- `GET /api/feeds/{feed_id}/entries`
-- `GET /api/articles`
-- `GET /api/articles/{article_id}`
-
-添加 RSS/Atom 订阅源的请求示例：
-
-```json
-{
-  "title": "OpenAI News",
-  "url": "https://openai.com/news/rss.xml"
-}
-```
-
-注意：当前实现只保存 RSS/Atom Feed 中提供的内容，不会额外抓取文章原网页全文。
-
-## 不应提交的文件
-
-以下文件或目录不应提交到 Git：
-
-- `.venv/`
-- `node_modules/`
-- `frontend/dist/`
-- `__pycache__/`
-- `*.pyc`
-- `*.db`
-- `*.sqlite`
-- `*.sqlite3`
-- 本地日志文件
-- API key 或其它密钥
-
-提交前建议检查：
-
-```bash
-git status
-```
-
-如果误暂存了本地数据库或缓存文件，可以取消暂存：
-
-```bash
-git restore --staged <file>
-```
-
-## 推荐启动顺序
-
-第一次运行项目：
-
-```bash
-cd backend
-pip install -r requirements.txt
-python init_db.py
-uvicorn app.main:app --reload
-```
-
-另开一个终端启动前端：
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-之后打开：
-
-```text
-http://127.0.0.1:5173
-```
-
-并通过以下地址查看后端接口：
-
-```text
-http://127.0.0.1:8000/docs
-```
+# RSSReader Initial Requirements and Architecture
+
+## Project Goal
+
+RSSReader is a local-first RSS/Atom reader built as a course project for open
+source collaboration practice. The project should provide a usable reading
+experience for subscriptions, articles, notes, search, export, AI summary, and
+AI translation workflows.
+
+The application should support both web development and desktop delivery. The
+desktop version must run on Windows, macOS, and Linux through Electron.
+
+## Target Users
+
+- Users who want to manage RSS/Atom subscriptions locally.
+- Students and contributors who need a clear Vue + FastAPI + SQLite project for
+  collaborative development.
+- Reviewers who need a reproducible project structure, documented APIs, and a
+  clear PR workflow.
+
+## Required Technology Stack
+
+- Frontend: Vue 3, Vite, TypeScript, Pinia, Vue Router, Element Plus.
+- Backend: FastAPI, Pydantic, uvicorn.
+- Database: SQLite.
+- Desktop shell: Electron.
+- Backend desktop packaging: PyInstaller.
+- RSS parsing: feedparser.
+- Content processing: BeautifulSoup, readability-lxml, markdownify.
+- AI integration: OpenAI-compatible APIs and local providers such as Ollama or
+  vLLM where possible.
+
+## Core Functional Requirements
+
+RSSReader should support the following product capabilities:
+
+- Add, list, update, delete, and synchronize RSS/Atom feed subscriptions.
+- Parse feed metadata and article entries from RSS/Atom sources.
+- Store feeds, articles, notes, sync logs, and AI results in SQLite.
+- Show a reading interface with feed filters, article lists, article details,
+  read/unread state, and starred articles.
+- Support article notes with Markdown content.
+- Support OPML import and export for subscription migration.
+- Support article export, especially Markdown export, with PDF export reserved
+  as a later extension.
+- Support cleaned HTML and Markdown conversion for better reading.
+- Support search, preferably through SQLite full-text search in a later phase.
+- Provide AI summary, AI translation, and tag suggestion workflows through
+  reserved API endpoints and later provider integrations.
+- Keep AI provider configuration outside source code and behind environment
+  variables or local settings.
+
+## Cross-Platform Desktop Requirements
+
+The desktop application should:
+
+- Run on Windows, macOS, and Linux.
+- Use Electron as the desktop shell.
+- Start the local FastAPI backend automatically.
+- Bundle the backend as a PyInstaller executable so end users do not need to
+  install Python.
+- Bind the backend only to `127.0.0.1`.
+- Use a dynamic local port to avoid conflicts with other services.
+- Load the Vue production frontend inside Electron.
+- Store desktop runtime data in the operating system user data directory:
+  - Windows: `%APPDATA%/RSSReader/app.db`
+  - macOS: `~/Library/Application Support/RSSReader/app.db`
+  - Linux: `~/.config/RSSReader/app.db`
+- Keep development databases, packaged outputs, dependency folders, logs, and
+  caches out of Git.
+
+## Architecture Overview
+
+RSSReader uses a three-layer structure:
+
+1. Frontend
+   - Vue pages, router, Pinia store, and API client.
+   - Calls backend endpoints under `/api`.
+   - In desktop production, reads the backend base URL injected by Electron.
+
+2. Backend
+   - FastAPI application with routers, services, schemas, and repositories.
+   - Owns RSS parsing, feed sync, article state, notes, export, logs, and AI
+     placeholder workflows.
+   - Initializes and migrates SQLite schema on startup.
+
+3. Desktop shell
+   - Electron main process starts the bundled backend.
+   - Electron preload exposes only minimal desktop configuration to the
+     renderer.
+   - Electron loads the built frontend with a desktop-safe application protocol.
+
+## Collaboration Requirements
+
+- Use GitHub Issues for visible task discussion.
+- Use feature branches and pull requests for changes.
+- Keep changes small and reviewable.
+- Use Conventional Commits.
+- Document backend endpoints, database changes, frontend routes, and state
+  assumptions when behavior changes.
+- Update weekly notes under `update_docs/Week{xx}_{github_name}.md`.
+- Append AI collaboration notes to `docs/AI_COLLABORATION.md` after AI-assisted
+  work.
+
+## Delivery Expectations
+
+The final project should include:
+
+- A working web development mode.
+- A working desktop mode.
+- Reproducible setup and build instructions.
+- Documented API behavior and database assumptions.
+- A clear PR workflow for future contributors.
+- Cross-platform packaging notes and Mac testing records.

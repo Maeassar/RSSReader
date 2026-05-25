@@ -1,0 +1,51 @@
+{
+  "name": "rssreader",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev:desktop": "node scripts/dev-desktop.js",
+    "dev:desktop:built": "npm run build:frontend && cross-env RSSREADER_USE_BUILT_FRONTEND=1 RSSREADER_OPEN_DEVTOOLS=1 electron .",
+    "build:frontend": "npm run build --prefix frontend",
+    "build:backend": "node scripts/build-backend.js",
+    "dist:desktop": "npm run build:frontend && npm run build:backend && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "cross-env": "^7.0.3"
+  },
+  "build": {
+    "appId": "io.github.rssreader.desktop",
+    "productName": "RSSReader",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/dist/RSSReaderBackend/",
+        "to": "backend/RSSReaderBackend"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.news"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network"
+    }
+  }
+}

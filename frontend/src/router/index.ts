@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 
 import AISettingsView from '../views/AISettingsView.vue'
 import FeedManageView from '../views/FeedManageView.vue'
@@ -8,7 +8,7 @@ import StatsView from '../views/StatsView.vue'
 import TagsView from '../views/TagsView.vue'
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: window.rssReaderDesktop ? createWebHashHistory() : createWebHistory(),
   routes: [
     { path: '/', component: ReaderView },
     { path: '/feeds', component: FeedManageView },
