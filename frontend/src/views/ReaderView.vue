@@ -69,7 +69,9 @@
       </div>
       <h1 class="reader-title">{{ store.selectedArticle.title }}</h1>
       <p class="muted">
-        <span v-if="store.selectedArticle.author">{{ store.selectedArticle.author }} · </span>
+        <span v-if="store.selectedArticle.author"
+          >{{ store.selectedArticle.author }} ·
+        </span>
         <a
           class="article-source-link"
           :href="store.selectedArticle.url"
@@ -161,7 +163,7 @@ async function decorateArticleLinks() {
 async function saveNote() {
   if (!store.selectedArticle) return;
   await rssApi.saveNote(store.selectedArticle.id, note.value);
-  ElMessage.success("笔记已保存到 Mock Repository");
+  ElMessage.success("笔记已保存");
 }
 
 async function exportMarkdown() {
