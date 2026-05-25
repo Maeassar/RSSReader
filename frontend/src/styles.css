@@ -119,13 +119,34 @@ body.theme-dark .panel {
 
 .reader-grid {
   display: grid;
-  grid-template-columns: 240px minmax(280px, 380px) minmax(420px, 1fr);
+  grid-template-columns: 240px minmax(220px, 280px) minmax(540px, 1fr);
   gap: 16px;
   height: calc(100vh - 96px);
 }
 
 .scroll-panel {
   overflow: auto;
+  scrollbar-color: #9aa4b2 transparent;
+}
+
+.scroll-panel::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.scroll-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-panel::-webkit-scrollbar-thumb {
+  background: #9aa4b2;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+.scroll-panel::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .article-item {
@@ -146,9 +167,39 @@ body.theme-dark .article-item.active {
   background: #22314a;
 }
 
+body.theme-dark .scroll-panel,
+body.theme-dark .article-list-panel {
+  scrollbar-color: #4a5568 transparent;
+}
+
+body.theme-dark .scroll-panel::-webkit-scrollbar-track,
+body.theme-dark .article-list-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body.theme-dark .scroll-panel::-webkit-scrollbar-thumb,
+body.theme-dark .article-list-panel::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+body.theme-dark .scroll-panel::-webkit-scrollbar-corner,
+body.theme-dark .article-list-panel::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .article-item h3 {
   margin: 0 0 6px;
   font-size: 15px;
+  line-height: 1.4;
+}
+
+.article-item .muted {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .article-body {
@@ -156,12 +207,30 @@ body.theme-dark .article-item.active {
   line-height: 1.75;
 }
 
+.article-source-link,
+.article-body a {
+  color: #2563eb;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.article-source-link:hover,
+.article-body a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
 body.theme-dark .article-body {
   color: #d8dee9;
 }
 
-body.theme-dark .article-body a {
+body.theme-dark .article-body a,
+body.theme-dark .article-source-link {
   color: #8ab4f8;
+}
+
+body.theme-dark .article-source-link:hover {
+  color: #a9c7ff;
 }
 
 body.theme-dark .el-button {
