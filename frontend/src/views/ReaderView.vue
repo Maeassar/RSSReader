@@ -27,16 +27,24 @@
     <section class="panel scroll-panel">
       <div class="toolbar">
         <template v-if="multiExportMode">
-          <el-button text @click="exitMultiExportMode">取消</el-button>
-          <span class="selection-status">{{ selectedBatchCount }} 已选择</span>
-          <el-button type="primary" :disabled="selectedBatchCount === 0" @click="openBatchExportDialog">
-            继续
-          </el-button>
+          <div class="selection-toolbar">
+            <div class="selection-toolbar-side is-left">
+              <el-button plain @click="exitMultiExportMode">取消</el-button>
+            </div>
+            <div class="selection-toolbar-center">
+              <div class="selection-status-pill">{{ selectedBatchCount }} 已选择</div>
+            </div>
+            <div class="selection-toolbar-side is-right">
+              <el-button type="primary" :disabled="selectedBatchCount === 0" @click="openBatchExportDialog">
+                继续
+              </el-button>
+            </div>
+          </div>
         </template>
         <template v-else>
           <div class="toolbar-actions">
             <el-button :icon="Refresh" @click="syncAll">同步全部</el-button>
-            <el-button @click="beginMultiExportMode">批量导出</el-button>
+            <el-button @click="beginMultiExportMode">文摘批量导出</el-button>
           </div>
         </template>
       </div>
@@ -53,11 +61,13 @@
         @click="handleArticleClick(article.id)"
       >
         <div class="article-row">
-          <el-checkbox
-            v-if="multiExportMode"
-            :model-value="isArticleBatchSelected(article.id)"
-            @click.stop="toggleBatchSelection(article.id)"
-          />
+          <div class="article-leading">
+            <el-checkbox
+              v-if="multiExportMode"
+              :model-value="isArticleBatchSelected(article.id)"
+              @click.stop="toggleBatchSelection(article.id)"
+            />
+          </div>
           <div class="article-meta">
             <h3>{{ article.title }}</h3>
             <p class="muted">{{ article.feed_title }}</p>
@@ -141,7 +151,14 @@
       </div>
 
       <div class="digest-options">
-        <el-checkbox v-model="includeBatchSummary">包含 AI 摘要</el-checkbox>
+        <div class="digest-option-block">
+          <el-checkbox v-model="includeBatchSummary" :disabled="batchSummaryUnavailable">
+            包含 AI 摘要
+          </el-checkbox>
+          <div v-if="batchSummaryHelperText" class="digest-option-help">
+            {{ batchSummaryHelperText }}
+          </div>
+        </div>
         <el-checkbox v-model="includeBatchNote">包含笔记</el-checkbox>
       </div>
 
@@ -207,6 +224,25 @@ const orderedSelectedBatchIds = computed(() => {
 });
 
 const selectedBatchCount = computed(() => orderedSelectedBatchIds.value.length);
+const batchSummaryUnavailable = computed(
+  () => {
+    const preview = batchDigestPreview.value;
+    return preview !== null && preview.summary_available_count === 0;
+  },
+);
+const batchSummaryHelperText = computed(() => {
+  const preview = batchDigestPreview.value;
+  if (!preview) {
+    return "";
+  }
+  if (preview.summary_available_count === 0) {
+    return "所选文章暂无 AI 摘要";
+  }
+  if (preview.summary_available_count < preview.exported_article_ids.length) {
+    return `仅 ${preview.summary_available_count} 篇文章有 AI 摘要，其他文章将省略摘要段落`;
+  }
+  return "";
+});
 
 onMounted(async () => {
   await store.loadAll();
@@ -323,6 +359,10 @@ async function refreshBatchDigestPreview() {
       include_summary: includeBatchSummary.value,
       include_note: includeBatchNote.value,
     });
+    const preview = batchDigestPreview.value;
+    if (preview && preview.summary_available_count === 0 && includeBatchSummary.value) {
+      includeBatchSummary.value = false;
+    }
   } catch (error) {
     batchDigestPreview.value = null;
     batchDigestDialogVisible.value = false;
@@ -410,7 +450,6 @@ async function syncAll() {
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -420,10 +459,56 @@ async function syncAll() {
   gap: 8px;
 }
 
+.selection-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+}
+
+.selection-toolbar-side {
+  display: flex;
+  align-items: center;
+}
+
+.selection-toolbar-side.is-right {
+  justify-content: flex-end;
+}
+
+.selection-toolbar-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.selection-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .article-row {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+}
+
+.article-leading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  padding-top: 2px;
 }
 
 .article-meta {
@@ -435,11 +520,6 @@ async function syncAll() {
   display: flex;
   gap: 6px;
   margin-top: 8px;
-}
-
-.selection-status {
-  font-size: 14px;
-  color: var(--el-text-color-secondary);
 }
 
 .article-item.selectable {
@@ -471,7 +551,20 @@ async function syncAll() {
 
 .digest-options {
   display: flex;
+  align-items: flex-start;
   gap: 16px;
+}
+
+.digest-option-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.digest-option-help {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
 }
 
 .digest-preview {

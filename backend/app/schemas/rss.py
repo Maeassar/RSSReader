@@ -125,5 +125,6 @@ class BatchDigestExportResponse(BaseModel):
     digest_title: str
     filename: str
     markdown: str
+    summary_available_count: int = 0
     exported_article_ids: list[int] = Field(default_factory=list)
     skipped_article_ids: list[int] = Field(default_factory=list)

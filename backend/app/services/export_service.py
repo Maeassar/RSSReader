@@ -31,6 +31,7 @@ def batch_digest_export(payload):
     entries = []
     exported_article_ids = []
     skipped_article_ids = []
+    summary_available_count = 0
 
     for article_id in payload.article_ids:
         try:
@@ -47,14 +48,17 @@ def batch_digest_export(payload):
 
         author = _normalize_optional_text(article.get("author")) or _normalize_optional_text(article.get("feed_title")) or ""
         note = repository.get_note(article_id)
-        summary_record = repository.get_latest_ai_result(article_id, "summary") if payload.include_summary else None
+        summary_record = repository.get_latest_ai_result(article_id, "summary")
+        summary_text = _normalize_optional_text(summary_record["result"]) if summary_record else None
+        if summary_text:
+            summary_available_count += 1
 
         entries.append(
             {
                 "title": title,
                 "author": author,
                 "url": url,
-                "summary": _normalize_optional_text(summary_record["result"]) if summary_record else None,
+                "summary": summary_text if payload.include_summary else None,
                 "note": _normalize_optional_text(note.get("content_markdown")) if payload.include_note else None,
             }
         )
@@ -67,6 +71,7 @@ def batch_digest_export(payload):
         "digest_title": digest_title,
         "filename": filename,
         "markdown": _render_batch_digest_markdown(digest_title, filename, export_time, entries),
+        "summary_available_count": summary_available_count,
         "exported_article_ids": exported_article_ids,
         "skipped_article_ids": skipped_article_ids,
     }

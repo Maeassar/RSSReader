@@ -73,6 +73,7 @@ export interface BatchDigestExportResponse {
   digest_title: string
   filename: string
   markdown: string
+  summary_available_count: number
   exported_article_ids: number[]
   skipped_article_ids: number[]
 }
