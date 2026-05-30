@@ -1,17 +1,17 @@
 # 开源软件开发与治理
 
 ## 成员
-| 姓名  | GitHub账号 | 学号 |
-|-----| ---------- | ---- |
-| 唐小卉 |https://github.com/TheadoraTang |51285903071|
-| 方蕴仪 |https://github.com/gloriaaa0312 |51275903070|
-| 洪贝贝 |https://github.com/handingna||
-| 唐益  |https://github.com/maeassar||
-| 徐治平 |https://github.com/fwunai|51285903022|
-| 仲韦萱 |https://github.com/bouboo1|51285903052|
-| 朱文韬 | https://github.com/GentleCold|51285903136|
-| 赖鑫  |https://github.com/specia1weak||
-| 张宥  |https://github.com/sdfhjisd||
+| 姓名  | GitHub账号 | 学号          |
+|-----| ---------- |-------------|
+| 唐小卉 |https://github.com/TheadoraTang | 51285903071 |
+| 方蕴仪 |https://github.com/gloriaaa0312 | 51275903070 |
+| 洪贝贝 |https://github.com/handingna|             |
+| 唐益  |https://github.com/maeassar|             |
+| 徐治平 |https://github.com/fwunai| 51285903022 |
+| 仲韦萱 |https://github.com/bouboo1| 51285903052 |
+| 朱文韬 | https://github.com/GentleCold| 51285903136 |
+| 赖鑫  |https://github.com/specia1weak| 51285903020 |
+| 张宥  |https://github.com/sdfhjisd|             |
 
 ## 成员分工概览
 | 成员  | 负责时间                        | 负责模块                       | 实际工作内容                                                             | 最终实现效果                                      |
