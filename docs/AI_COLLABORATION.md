@@ -94,7 +94,7 @@
 
 ## 2026-06-02
 
-- 使用 AI Coding Agent 协助补齐洪贝贝 Week14 的 OPML 与 Feed 同步系统。
+- 使用 AI Coding Agent 协助补齐 Week14 的 OPML 与 Feed 同步系统。
 - 后端将 OPML 导入从 Mock 改为真实 XML 解析，支持递归读取 `outline` 中的 `xmlUrl`，并在导入后立即创建订阅、同步文章和写入 SQLite。
 - 后端将 OPML 导出改为读取当前 SQLite `feeds` 表生成 OPML 2.0 XML。
 - `POST /api/feeds/sync-all` 改为返回同步汇总对象，单个 Feed 失败不会阻断其它 Feed，并保留失败结果供前端提示和日志排查。
