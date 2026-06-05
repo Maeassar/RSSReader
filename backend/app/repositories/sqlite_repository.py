@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import sqlite3
 
 from app.database import get_connection, initialize_database
+from app.services.content_cleaner import clean_html
+from app.services.webpage_extractor import extract_article_html
 
 
 def now() -> str:
@@ -158,6 +160,45 @@ class SQLiteRepository:
         if row is None:
             raise ValueError(f"Article {article_id} not found")
         return self._article(row)
+
+    def refresh_article_content(self, article_id: int):
+        article = self.get_article(article_id)
+        url = article.get("url")
+        if not url:
+            raise ValueError("Article does not have a source URL.")
+
+        fetched_html = extract_article_html(url)
+        if not fetched_html:
+            raise ValueError("Unable to load full article content from the source page.")
+
+        cleaned = clean_html(fetched_html)
+        cleaned_html = cleaned["cleaned_html"] or fetched_html
+        cleaned_markdown = cleaned["cleaned_markdown"]
+        current_html = article.get("cleaned_html") or article.get("raw_html") or ""
+
+        with get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE entries
+                SET content = ?, raw_html = ?, cleaned_html = ?, cleaned_markdown = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    fetched_html,
+                    fetched_html,
+                    cleaned_html,
+                    cleaned_markdown,
+                    now(),
+                    article_id,
+                ),
+            )
+
+        updated = self.get_article(article_id)
+        if len((updated.get("cleaned_html") or "").strip()) <= len(current_html.strip()):
+            self._log(updated["feed_id"], url, "success", "Loaded full article content but extracted body was not longer than current content.")
+        else:
+            self._log(updated["feed_id"], url, "success", "Loaded and replaced article with fuller source-page content.")
+        return updated
 
     def set_article_flag(self, article_id, key, value):
         if key not in {"is_read", "is_starred"}:
@@ -361,11 +402,12 @@ class SQLiteRepository:
 
     def _entry_content(self, entry: dict) -> dict[str, str | None]:
         fallback = entry.get("content") or entry.get("summary")
+        cleaned = clean_html(fallback)
         return {
             "content": fallback,
             "raw_html": fallback,
-            "cleaned_html": fallback,
-            "cleaned_markdown": None,
+            "cleaned_html": cleaned["cleaned_html"] or fallback,
+            "cleaned_markdown": cleaned["cleaned_markdown"],
         }
 
     def _update_existing_entry_content(

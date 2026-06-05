@@ -20,7 +20,7 @@
             text
             circle
             aria-label="订阅"
-            @click="router.push('/feeds')"
+            @click="openSubscriptionPanel"
           />
         </el-tooltip>
         <el-tooltip content="统计日志" placement="bottom">
@@ -47,7 +47,7 @@
             text
             circle
             aria-label="设置"
-            @click="router.push('/settings')"
+            @click="settingsDrawerOpen = true"
           />
         </el-tooltip>
       </div>
@@ -55,6 +55,16 @@
     <el-main class="main">
       <router-view />
     </el-main>
+    <el-drawer
+      v-model="settingsDrawerOpen"
+      direction="rtl"
+      size="460px"
+      class="settings-drawer"
+      append-to-body
+      :with-header="false"
+    >
+      <SettingsView embedded />
+    </el-drawer>
   </el-container>
 </template>
 
@@ -66,13 +76,15 @@ import {
   Reading,
   Setting,
 } from "@element-plus/icons-vue";
-import { onMounted, onUnmounted, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { rssApi } from "./api/client";
 import { usePreferencesStore } from "./stores/preferences";
+import SettingsView from "./views/SettingsView.vue";
 
 const router = useRouter();
 const preferences = usePreferencesStore();
+const settingsDrawerOpen = ref(false);
 let timedSyncTimer: number | undefined;
 let backgroundSyncRunning = false;
 
@@ -133,5 +145,9 @@ async function runBackgroundSync(reason: "startup" | "timer") {
   } finally {
     backgroundSyncRunning = false;
   }
+}
+
+function openSubscriptionPanel() {
+  void router.push({ path: '/', query: { panel: 'feeds' } })
 }
 </script>

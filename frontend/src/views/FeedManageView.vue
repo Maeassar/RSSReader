@@ -1,9 +1,14 @@
 <template>
-  <div>
-    <div class="page-title">
-      <h1>订阅管理</h1>
-      <div class="toolbar">
+  <div class="feed-manage-page" :class="{ embedded }">
+    <div class="page-title feed-manage-header" :class="{ embedded: embedded }">
+      <div class="feed-manage-title-group">
+        <h1>订阅管理</h1>
+        <p v-if="embedded" class="feed-manage-subtitle">在当前阅读页直接管理订阅，不跳转整页</p>
+      </div>
+      <div class="toolbar feed-manage-toolbar">
+        <el-button v-if="embedded" class="feed-manage-action" @click="emit('close')">关闭</el-button>
         <el-button
+          class="feed-manage-action"
           :icon="Refresh"
           :loading="syncingAll"
           :disabled="syncingAll || syncingFeedId !== null"
@@ -18,11 +23,12 @@
           :http-request="importOpml"
           :disabled="isBusy"
         >
-          <el-button :icon="Upload" :loading="importingOpml" :disabled="isBusy">
+          <el-button class="feed-manage-action" :icon="Upload" :loading="importingOpml" :disabled="isBusy">
             OPML 导入
           </el-button>
         </el-upload>
         <el-button
+          class="feed-manage-action"
           :loading="exportingOpml"
           :disabled="isBusy"
           :icon="Download"
@@ -31,8 +37,8 @@
         >
       </div>
     </div>
-    <section class="panel">
-      <el-form :inline="true" @submit.prevent>
+    <section class="panel feed-manage-panel" :class="{ embedded: embedded }">
+      <el-form class="feed-form" :inline="!embedded" @submit.prevent>
         <el-form-item label="标题">
           <el-input v-model="title" placeholder="可选" />
         </el-form-item>
@@ -44,7 +50,7 @@
           />
         </el-form-item>
         <el-button
-          style="margin-left: 8px; margin-bottom: 18px"
+          class="feed-submit-button"
           type="primary"
           :loading="addingFeed"
           :disabled="addingFeed || !url"
@@ -53,9 +59,9 @@
           {{ addingFeed ? "正在添加..." : "添加订阅" }}
         </el-button>
       </el-form>
-      <el-table :data="feeds" stripe>
-        <el-table-column prop="title" label="标题" />
-        <el-table-column prop="url" label="URL" />
+      <el-table :data="feeds" stripe table-layout="fixed" class="feed-table">
+        <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="url" label="URL" min-width="320" show-overflow-tooltip />
         <el-table-column label="最后同步" width="180">
           <template #default="{ row }">
             {{ formatLastSyncAt(row.last_sync_at) }}
@@ -103,6 +109,16 @@ import { ElMessage } from "element-plus";
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { Feed, rssApi } from "../api/client";
+
+withDefaults(defineProps<{
+  embedded?: boolean
+}>(), {
+  embedded: false,
+});
+
+const emit = defineEmits<{
+  close: []
+}>();
 
 const feeds = ref<Feed[]>([]);
 const title = ref("");
@@ -268,11 +284,119 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 </script>
 
 <style scoped>
+.feed-manage-page {
+  min-height: calc(100vh - 56px);
+  padding: 20px;
+  background: var(--app-bg);
+}
+
+.feed-manage-page.embedded {
+  min-height: auto;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.feed-manage-header {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.feed-manage-title-group {
+  display: grid;
+  gap: 4px;
+}
+
+.feed-manage-title-group h1 {
+  margin: 0;
+}
+
+.feed-manage-subtitle {
+  margin: 0;
+  color: #7a8799;
+  font-size: 13px;
+}
+
+.page-title.embedded {
+  margin-bottom: 0;
+}
+
+.feed-manage-panel {
+  padding: 18px 20px;
+  border-radius: 24px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--app-surface-strong) 94%, white 6%);
+  border-color: color-mix(in srgb, var(--app-border) 78%, transparent 22%);
+}
+
+.feed-manage-panel.embedded {
+  border-radius: 24px;
+}
+
+.feed-form {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.feed-submit-button {
+  margin: 0 0 18px;
+}
+
+.feed-manage-action {
+  --el-button-bg-color: color-mix(in srgb, var(--app-surface-strong) 66%, var(--app-bg) 34%);
+  --el-button-border-color: color-mix(in srgb, var(--app-border) 94%, #b5c7e6 6%);
+  --el-button-text-color: color-mix(in srgb, currentColor 84%, #506483 16%);
+  --el-button-hover-bg-color: color-mix(in srgb, var(--app-surface-strong) 48%, var(--theme-accent) 52%);
+  --el-button-hover-border-color: color-mix(in srgb, var(--theme-accent) 44%, var(--app-border) 56%);
+}
+
+.feed-table {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.feed-table :deep(.el-table) {
+  --el-table-bg-color: color-mix(in srgb, var(--app-surface) 96%, var(--app-bg) 4%);
+  --el-table-tr-bg-color: color-mix(in srgb, var(--app-surface) 96%, var(--app-bg) 4%);
+  --el-table-header-bg-color: color-mix(in srgb, var(--app-surface-strong) 82%, var(--app-bg) 18%);
+  --el-table-border-color: color-mix(in srgb, var(--app-border) 74%, transparent 26%);
+}
+
+.feed-table :deep(.el-table th.el-table__cell) {
+  font-weight: 800;
+}
+
+.feed-table :deep(.el-table__cell) {
+  vertical-align: middle;
+}
+
 .url-input {
   width: 360px;
 }
 
 .opml-upload {
   display: inline-flex;
+}
+
+@media (max-width: 960px) {
+  .feed-manage-page {
+    padding: 14px;
+  }
+
+  .feed-form {
+    grid-template-columns: 1fr;
+  }
+
+  .feed-submit-button {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  .url-input {
+    width: 100%;
+  }
 }
 </style>

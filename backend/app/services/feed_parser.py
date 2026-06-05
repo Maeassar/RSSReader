@@ -2,6 +2,8 @@ import feedparser
 from datetime import datetime, timezone
 from time import mktime
 
+from app.services.webpage_extractor import extract_article_html, should_fetch_full_article
+
 
 def parse_feed(url: str) -> dict:
     parsed = feedparser.parse(url)
@@ -36,12 +38,19 @@ def _entry_content(entry) -> str | None:
     content = entry.get("content")
     if content and isinstance(content, list):
         first = content[0]
-        return first.get("value") if isinstance(first, dict) else None
-    return entry.get("summary")
+        content_html = first.get("value") if isinstance(first, dict) else None
+    else:
+        content_html = entry.get("summary")
+
+    if should_fetch_full_article(content_html, entry.get("summary"), entry.get("link")):
+        fetched_html = extract_article_html(entry.get("link"))
+        if fetched_html:
+            return fetched_html
+
+    return content_html
 
 
 def _format_time(value) -> str | None:
     if not value:
         return None
     return datetime.fromtimestamp(mktime(value), tz=timezone.utc).isoformat()
-

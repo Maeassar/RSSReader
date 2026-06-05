@@ -24,6 +24,14 @@ def get_article(article_id: int):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/{article_id}/refresh-content", response_model=ArticleRead)
+def refresh_article_content(article_id: int):
+    try:
+        return article_service.refresh_article_content(article_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.patch("/{article_id}/read", response_model=ArticleRead)
 def mark_read(article_id: int, is_read: bool = True):
     return article_service.mark_read(article_id, is_read)
@@ -32,4 +40,3 @@ def mark_read(article_id: int, is_read: bool = True):
 @router.patch("/{article_id}/star", response_model=ArticleRead)
 def mark_starred(article_id: int, is_starred: bool = True):
     return article_service.mark_starred(article_id, is_starred)
-
