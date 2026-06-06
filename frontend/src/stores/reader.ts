@@ -126,7 +126,12 @@ export const useReaderStore = defineStore('reader', {
       }
     },
     async selectArticle(id: number) {
-      this.selectedArticle = this.applyArticleOverrides(await rssApi.article(id))
+      const article = this.applyArticleOverrides(await rssApi.article(id))
+      this.selectedArticle = article
+      if (!article.is_read) {
+        const updated = await rssApi.markRead(article.id, true)
+        this.replaceArticle(updated)
+      }
     },
     setArticles(articles: Article[]) {
       this.articles = sortArticles(
