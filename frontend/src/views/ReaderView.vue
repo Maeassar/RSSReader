@@ -79,8 +79,18 @@
             :class="{ active: activeFeedId === feed.id }"
             @click="applyFeedFilter(feed.id)"
           >
-            <span class="sidebar-feed-mark">{{ feed.title.slice(0, 1) }}</span>
+            <span class="sidebar-feed-mark">
+              <img
+                v-if="feedFaviconUrl(feed)"
+                :src="feedFaviconUrl(feed) || ''"
+                :alt="`${feed.title} logo`"
+                class="sidebar-feed-icon"
+                @error="handleFeedIconError(feed.id)"
+              />
+              <span v-else class="sidebar-feed-icon-fallback"></span>
+            </span>
             <span class="sidebar-feed-name" :title="feed.title">{{ feed.title }}</span>
+            <span class="sidebar-feed-article-count">{{ feedArticleCount(feed.id) }}</span>
           </button>
         </div>
       </section>
@@ -145,9 +155,9 @@
 
           <div class="article-card-main" :class="{ 'with-thumbnail': Boolean(store.showThumbnails && articleThumbnail(article)) }">
             <div class="article-card-copy">
-              <h3>{{ article.title }}</h3>
-              <p v-if="article.summary" class="article-card-summary" :style="summaryClampStyle">
-                {{ article.summary }}
+              <h3 v-html="renderTitleInlineHtml(article.title)"></h3>
+              <p v-if="articleListSummary(article)" class="article-card-summary" :style="summaryClampStyle">
+                {{ articleListSummary(article) }}
               </p>
               <div class="article-card-tags">
                 <el-tag v-if="!article.is_read" size="small">未读</el-tag>
@@ -165,7 +175,12 @@
             </div>
 
             <div v-if="store.showThumbnails && articleThumbnail(article)" class="article-card-thumb">
-              <img :src="articleThumbnail(article) || ''" alt="" class="article-thumbnail" />
+              <img
+                :src="articleThumbnail(article) || ''"
+                alt=""
+                class="article-thumbnail"
+                @error="handleThumbnailError(article)"
+              />
             </div>
           </div>
         </article>
@@ -223,17 +238,6 @@
           <el-tooltip content="翻译" placement="top">
             <el-button class="toolbar-icon-button" :icon="Switch" circle @click="runTranslate" />
           </el-tooltip>
-          <el-tooltip :content="fullTextEnabled ? '切回摘要' : '加载网页原文'" placement="top">
-            <el-button
-              class="toolbar-icon-button load-fulltext-button"
-              :class="{ active: fullTextEnabled }"
-              plain
-              :icon="DocumentAdd"
-              :loading="refreshingArticleContent"
-              circle
-              @click="refreshArticleContent"
-            />
-          </el-tooltip>
           <el-dropdown trigger="click" @command="handleExportCommand">
             <el-button class="toolbar-icon-button export-trigger" :loading="exportingMarkdown" circle aria-label="导出">
               <el-icon><Download /></el-icon>
@@ -247,18 +251,24 @@
           </el-dropdown>
         </div>
 
-        <h1 class="reader-title">
-          <a class="reader-title-link" :href="store.selectedArticle.url" target="_blank" rel="noopener noreferrer">
-            {{ store.selectedArticle.title }}
-          </a>
-        </h1>
-        <p class="muted">
-          <span v-if="store.selectedArticle.author">{{ store.selectedArticle.author }}</span>
-        </p>
+        <header class="reader-hero">
+          <div class="reader-source-row">
+            <span class="reader-source-name">{{ store.selectedArticle.feed_title }}</span>
+          </div>
+          <h1 class="reader-title" v-html="renderTitleInlineHtml(store.selectedArticle.title)"></h1>
+          <div class="reader-source-link-row">
+            <a class="reader-source-link" :href="store.selectedArticle.url" target="_blank" rel="noopener noreferrer">
+              {{ store.selectedArticle.url }}
+            </a>
+          </div>
+          <div class="reader-meta">
+            <span v-if="store.selectedArticle.author">{{ store.selectedArticle.author }}</span>
+            <span v-if="readerPublishedAt(store.selectedArticle)">{{ readerPublishedAt(store.selectedArticle) }}</span>
+          </div>
+        </header>
         <div class="article-reading-surface">
           <div ref="articleBodyRef" class="article-body" v-html="renderedArticleHtml"></div>
         </div>
-        <el-alert v-if="fulltextHint" :title="fulltextHint" type="info" show-icon :closable="false" class="reader-inline-alert" />
         <el-alert v-if="aiResult" :title="aiResult" type="success" show-icon :closable="false" />
         <el-divider />
         <h2 class="reader-section-title">笔记</h2>
@@ -273,14 +283,14 @@
       </section>
 
       <section v-if="feedManagerOpen" class="panel feed-manager-overlay">
-        <FeedManageView embedded @close="closeFeedManager" />
+        <FeedManageView embedded @close="closeFeedManager" @changed="handleFeedManagerChanged" />
       </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Check, CollectionTag, DocumentAdd, Download, Files, MagicStick, MoreFilled, Plus, Refresh, Star, Switch, Top } from '@element-plus/icons-vue'
+import { Check, CollectionTag, Download, Files, MagicStick, MoreFilled, Plus, Refresh, Star, Switch, Top } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -296,22 +306,22 @@ const note = ref('')
 const aiResult = ref('')
 const articleBodyRef = ref<HTMLElement | null>(null)
 const exportingMarkdown = ref(false)
-const refreshingArticleContent = ref(false)
-const fullTextEnabled = ref(false)
 const feedManagerOpen = ref(false)
 const activeFilterKey = ref<'all' | 'unread' | 'starred'>('all')
 const activeFeedId = ref<number | null>(null)
 const activeTagId = ref<number | null>(null)
 const newTagName = ref('')
 const newTagColor = ref('#5b8def')
-const fulltextHint = ref('')
+const failedThumbnailKeys = ref<Set<string>>(new Set())
+const stableArticleThumbnails = ref<Record<number, string>>({})
+const failedFeedIconIds = ref<Set<number>>(new Set())
 
 const renderedArticleHtml = computed(() => {
   const article = store.selectedArticle
   if (!article) return ''
-  if (fullTextEnabled.value && article.cleaned_html?.trim()) return article.cleaned_html
+  const primaryContent = article.cleaned_html?.trim() || article.raw_html?.trim() || ''
+  if (primaryContent) return renderRichArticleContent(primaryContent, article.cleaned_markdown)
   if (article.summary?.trim()) return `<p>${escapeHtml(article.summary)}</p>`
-  if (article.cleaned_html?.trim()) return article.cleaned_html
   return '<p>这篇文章暂时没有可展示的正文内容。</p>'
 })
 
@@ -361,6 +371,19 @@ onUnmounted(() => window.removeEventListener('rssreader:background-sync', handle
 
 watch(() => store.selectedArticle?.id, loadNote)
 watch(renderedArticleHtml, decorateArticleLinks, { flush: 'post' })
+watch(
+  () => store.articles,
+  (articles) => {
+    stableArticleThumbnails.value = articles.reduce<Record<number, string>>((cache, article) => {
+      const current = cache[article.id]
+      if (current) return cache
+      const src = extractImageSrc(article.cleaned_html || article.raw_html || '')
+      if (src) cache[article.id] = src
+      return cache
+    }, { ...stableArticleThumbnails.value })
+  },
+  { immediate: true }
+)
 watch(filteredArticles, ensureVisibleSelection)
 watch(
   () => route.query.panel,
@@ -375,12 +398,18 @@ async function handleBackgroundSync() {
   await loadNote()
 }
 
+async function handleFeedManagerChanged() {
+  await store.loadAll()
+  await loadNote()
+  if (activeFeedId.value !== null && !store.feeds.some((feed) => feed.id === activeFeedId.value)) {
+    activeFeedId.value = null
+  }
+}
+
 async function loadNote() {
   if (!store.selectedArticle) return
   const data = await rssApi.note(store.selectedArticle.id)
   note.value = data.content_markdown
-  fullTextEnabled.value = false
-  fulltextHint.value = ''
 }
 
 async function decorateArticleLinks() {
@@ -388,6 +417,15 @@ async function decorateArticleLinks() {
   articleBodyRef.value?.querySelectorAll('a').forEach((link) => {
     link.setAttribute('target', '_blank')
     link.setAttribute('rel', 'noopener noreferrer')
+  })
+  articleBodyRef.value?.querySelectorAll('img').forEach((image) => {
+    image.addEventListener(
+      'error',
+      () => {
+        image.classList.add('image-load-failed')
+      },
+      { once: true }
+    )
   })
 }
 
@@ -440,9 +478,50 @@ function tagName(tagId: number) {
 }
 
 function articleThumbnail(article: Article) {
-  const html = article.cleaned_html || article.raw_html || ''
+  const src = stableArticleThumbnails.value[article.id] || extractImageSrc(article.cleaned_html || article.raw_html || '')
+  if (!src || failedThumbnailKeys.value.has(thumbnailKey(article, src))) return null
+  return src
+}
+
+function handleThumbnailError(article: Article) {
+  const src = articleThumbnail(article)
+  if (!src) return
+  failedThumbnailKeys.value = new Set([...failedThumbnailKeys.value, thumbnailKey(article, src)])
+}
+
+function thumbnailKey(article: Article, src: string) {
+  return `${article.id}:${src}`
+}
+
+function handleFeedIconError(feedId: number) {
+  failedFeedIconIds.value = new Set([...failedFeedIconIds.value, feedId])
+}
+
+function feedArticleCount(feedId: number) {
+  return store.articles.filter((article) => article.feed_id === feedId).length
+}
+
+function feedFaviconUrl(feed: { id: number; site_url?: string; url: string }) {
+  if (failedFeedIconIds.value.has(feed.id)) return null
+  const target = feed.site_url || feed.url
+  return `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(target)}`
+}
+
+function extractImageSrc(html: string) {
   const matched = html.match(/<img[^>]+src=["']([^"']+)["']/i)
   return matched?.[1] ?? null
+}
+
+function articleListSummary(article: Article) {
+  const source = article.summary || article.cleaned_html || article.raw_html || ''
+  const text = htmlToPlainText(source)
+  return text.length > 180 ? `${text.slice(0, 180).trim()}...` : text
+}
+
+function htmlToPlainText(value: string) {
+  const parser = new DOMParser()
+  const document = parser.parseFromString(value, 'text/html')
+  return (document.body.textContent || value).replace(/\s+/g, ' ').trim()
 }
 
 function formatArticleDate(article: Article) {
@@ -451,6 +530,20 @@ function formatArticleDate(article: Article) {
   const date = new Date(source)
   if (Number.isNaN(date.getTime())) return ''
   return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
+function readerPublishedAt(article: Article) {
+  const source = article.published_at || article.created_at
+  if (!source) return ''
+  const date = new Date(source)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date)
 }
 
 async function createTag() {
@@ -510,41 +603,6 @@ async function exportDigest() {
   }
 }
 
-async function refreshArticleContent() {
-  if (!store.selectedArticle) return
-  if (fullTextEnabled.value) {
-    fullTextEnabled.value = false
-    fulltextHint.value = '已切回摘要视图。'
-    return
-  }
-  const current = store.selectedArticle
-  if (hasSubstantialFullText(current)) {
-    fullTextEnabled.value = true
-    fulltextHint.value = '已切换到当前保存的全文版本。'
-    return
-  }
-  refreshingArticleContent.value = true
-  try {
-    const updated = await rssApi.refreshArticleContent(store.selectedArticle.id)
-    store.replaceArticle(updated)
-    if (hasSubstantialFullText(updated)) {
-      fullTextEnabled.value = true
-      fulltextHint.value = '已加载更完整的正文内容。'
-      ElMessage.success('已切换到全文')
-    } else {
-      fullTextEnabled.value = false
-      fulltextHint.value = '当前来源暂时只提取到了摘要级内容。'
-      ElMessage.warning('这篇文章目前还没有提取到更完整的正文')
-    }
-  } catch (error) {
-    fullTextEnabled.value = false
-    fulltextHint.value = '当前来源暂时不支持补全更完整的正文。'
-    ElMessage.error('补全文失败')
-  } finally {
-    refreshingArticleContent.value = false
-  }
-}
-
 function beginMultiExportMode() {
   ElMessage.info('批量导出入口已保留，后续可以继续细化交互。')
 }
@@ -594,14 +652,6 @@ function togglePinnedSelected() {
   store.togglePinned(store.selectedArticle.id)
 }
 
-function hasSubstantialFullText(article: Article) {
-  const html = article.cleaned_html?.trim() || ''
-  if (!html) return false
-  const summaryLength = (article.summary || '').trim().length
-  const textLength = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length
-  return textLength > Math.max(summaryLength + 80, 220)
-}
-
 function triggerBrowserDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -619,6 +669,80 @@ function safeFilename(name: string) {
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+function renderRichArticleContent(primaryContent: string, cleanedMarkdown?: string) {
+  if (looksLikeHtml(primaryContent)) return primaryContent
+  const markdownSource = normalizeRssTextPlaceholders(cleanedMarkdown?.trim() || primaryContent)
+  if (looksLikeMarkdown(markdownSource)) return markdownToHtml(markdownSource)
+  return `<p>${renderMarkdownInline(markdownSource).replace(/\n/g, '<br />')}</p>`
+}
+
+function renderTitleInlineHtml(value: string) {
+  return renderMarkdownInline(value, { allowLinks: false })
+}
+
+function normalizeRssTextPlaceholders(value: string) {
+  return value.replace(/\[Image:\s*(https?:\/\/[^\]\s]+)\]/g, '![]($1)')
+}
+
+function looksLikeHtml(value: string) {
+  return /<\/?[a-z][\s\S]*>/i.test(value)
+}
+
+function looksLikeMarkdown(value: string) {
+  return /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+\.\s|>\s)|(```|`[^`]+`|\*\*[^*]+\*\*|!\[[^\]]*]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[Image:\s*https?:\/\/[^\]]+\])/m.test(value)
+}
+
+function markdownToHtml(markdown: string) {
+  const normalized = markdown.replace(/\r\n/g, '\n').trim()
+  const blocks = normalized.split(/\n{2,}/).filter(Boolean)
+  return blocks.map(renderMarkdownBlock).join('')
+}
+
+function renderMarkdownBlock(block: string) {
+  const lines = block.split('\n')
+  if (lines[0]?.startsWith('```') && lines[lines.length - 1]?.startsWith('```')) {
+    const code = lines.slice(1, -1).join('\n')
+    return `<pre><code>${escapeHtml(code)}</code></pre>`
+  }
+
+  const heading = lines[0]?.match(/^\s*(#{1,6})\s+(.+)$/)
+  if (heading) {
+    const level = heading[1].length
+    return `<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`
+  }
+
+  if (lines.every((line) => /^\s*[-*+]\s+/.test(line))) {
+    const items = lines.map((line) => `<li>${renderMarkdownInline(line.replace(/^\s*[-*+]\s+/, ''))}</li>`)
+    return `<ul>${items.join('')}</ul>`
+  }
+
+  if (lines.every((line) => /^\s*\d+\.\s+/.test(line))) {
+    const items = lines.map((line) => `<li>${renderMarkdownInline(line.replace(/^\s*\d+\.\s+/, ''))}</li>`)
+    return `<ol>${items.join('')}</ol>`
+  }
+
+  if (lines.every((line) => /^\s*>\s?/.test(line))) {
+    const content = lines.map((line) => line.replace(/^\s*>\s?/, '')).join('<br />')
+    return `<blockquote>${renderMarkdownInline(content)}</blockquote>`
+  }
+
+  return `<p>${lines.map((line) => renderMarkdownInline(line)).join('<br />')}</p>`
+}
+
+function renderMarkdownInline(value: string, options: { allowLinks?: boolean } = {}) {
+  let html = escapeHtml(value)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
+  if (options.allowLinks !== false) {
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+  } else {
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+  }
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+  return html
 }
 
 async function runSummary() {
@@ -654,6 +778,7 @@ function exportNote() {
 }
 
 .sidebar-panel {
+  height: 100%;
   padding: 10px 14px 16px;
   background: color-mix(in srgb, var(--app-surface-strong) 38%, var(--app-bg) 62%);
   border-color: color-mix(in srgb, var(--app-border) 76%, transparent 24%);
@@ -661,6 +786,8 @@ function exportNote() {
   border-width: 0 1px 0 0;
   box-shadow: none;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-header {
@@ -685,6 +812,7 @@ function exportNote() {
   display: grid;
   gap: 6px;
   margin-bottom: 14px;
+  flex: 0 0 auto;
 }
 
 .sidebar-primary-link,
@@ -752,6 +880,7 @@ function exportNote() {
 .sidebar-feed-list {
   margin-bottom: 0;
   overflow: hidden;
+  align-content: start;
 }
 
 .sidebar-chevron {
@@ -810,18 +939,33 @@ function exportNote() {
   gap: 10px;
   cursor: pointer;
   overflow: hidden;
+  flex: 0 0 auto;
 }
 
 .sidebar-feed-mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--theme-accent) 74%, white 26%);
-  color: white;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
   display: grid;
   place-items: center;
-  font-weight: 800;
   flex: 0 0 auto;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--app-surface-strong) 92%, var(--app-bg) 8%);
+  border: 1px solid color-mix(in srgb, var(--app-border) 78%, transparent 22%);
+}
+
+.sidebar-feed-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.sidebar-feed-icon-fallback,
+.reader-source-icon-fallback {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-accent) 72%, white 28%);
 }
 
 .sidebar-feed-name {
@@ -832,6 +976,16 @@ function exportNote() {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
+  display: block;
+}
+
+.sidebar-feed-article-count {
+  min-width: 28px;
+  margin-left: auto;
+  text-align: right;
+  color: color-mix(in srgb, currentColor 56%, transparent 44%);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .article-list-panel {
@@ -1091,13 +1245,10 @@ function exportNote() {
   margin-top: 14px;
 }
 
-.reader-title-link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.reader-title-link:hover {
-  text-decoration: underline;
+.reader-source-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
 }
 
 .note-actions {

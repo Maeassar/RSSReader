@@ -136,3 +136,64 @@
 - 同步更新 `update_docs/Week15_bouboo1.md`，整理本周内容处理、主题系统、订阅管理、导出语义和本地验证结果。
 - 当日验证：多次执行 `cd frontend && npm run build`，构建通过。
 - 当前限制：标签分配与标签筛选虽然已可在前端使用，但后端的标签关联查询与跨设备一致性仍需后续完善。
+
+## 2026-06-06
+
+- 使用 AI Coding Agent 对阅读页文章详情头部做小幅对齐修正。
+- 将标题、来源、作者与发布时间所在的 `reader-hero` 区域从居中块布局改回左对齐，贴近此前阅读页的视觉习惯。
+- 本次改动仅调整前端样式，不涉及接口、数据结构或业务逻辑变更。
+- 使用 AI Coding Agent 收紧“加载全文”的正文提取与清洗规则。
+- 提取阶段新增更具体的正文容器优先级，并对 `sidebar`、`related`、`share` 一类噪音区块做预裁剪，尽量避免把右侧插图或推荐内容带入阅读页。
+- 清洗阶段补充对侧栏、分享区和高链接密度推荐块的移除逻辑，目标是保留主图、正文段落和正文内嵌图片。
+- 使用 AI Coding Agent 排查 VS Code 中 `Code Helper` CPU 异常升高与插件响应缓慢问题。
+- 确认当前工作区总文件数约 `12,589`，其中 `frontend/node_modules` 约 `159 MB`、`12,361` 个文件，且仓库此前缺少工作区级 `.vscode/settings.json`，导致 VS Code 与插件容易对依赖目录和构建产物持续监听、搜索与索引。
+- 新增工作区级排除配置，收紧 `files.exclude`、`files.watcherExclude` 与 `search.exclude`，重点排除 `frontend/node_modules`、`frontend/dist`、`backend/dist`、`backend/build`、`release`、`__pycache__` 与 `.pytest_cache`。
+- 当前限制：该修复只降低 VS Code 及插件对无关目录的扫描开销，不会影响插件本身的远端响应速度；若后续仍有高 CPU，需要继续结合 VS Code 进程管理器检查是否有特定扩展或 Webview 卡住。
+- 使用 AI Coding Agent 为阅读页补充 Markdown 正文渲染兼容。
+- 当文章正文不是 HTML 而是 Markdown 文本时，前端现在会自动识别并渲染标题、列表、引用、代码块、链接、强调和 Markdown 图片，而不是直接把原始 Markdown 当普通文本显示。
+- 本次仅调整前端阅读页渲染逻辑，不修改后端接口和数据库字段。
+- 当日验证：`cd frontend && npm run build` 通过。
+- 使用 AI Coding Agent 排查 OpenAI RSS 订阅失败问题，目标地址为 `https://openai.com/news/rss.xml`。
+- 实测确认该地址在 2026-06-06 仍返回 `HTTP 200`，且后端当前使用的 `feedparser.parse(...)` 可以正常解析出 `OpenAI News` 和 992 篇文章；本地数据库中也已存在该订阅。
+- 本次修复聚焦于订阅管理页的错误提示：当后端返回 `Feed already exists` 时，前端现在会明确提示“这条订阅已经存在，可以直接同步或在列表中查看”，并对 URL 校验失败、Feed 解析失败等情况显示更具体的错误信息，而不是统一显示笼统失败提示。
+
+## 2026-06-06
+
+- 使用 AI Coding Agent 再次排查 `https://openai.com/news/rss.xml` 仍偶发无法订阅的问题。
+- 结合本地 `feed_fetch_logs` 记录，确认失败并非单一 URL 校验问题，而是后端抓取链路存在两类真实异常：`Remote end closed connection without response` 与 `'NoneType' object has no attribute 'get'`。
+- 已将 `backend/app/services/feed_parser.py` 调整为先显式发起 HTTP 请求拉取 RSS/XML，再交给 `feedparser` 解析；请求头补充浏览器化 `User-Agent` 与 XML `Accept`，并对临时网络错误增加最多 3 次重试。
+- 同时新增 `parsed.feed` 为空时的兜底逻辑，避免异常解析结果直接触发 `NoneType` 崩溃。
+- 新增 `backend/tests/test_feed_parser.py` 的回归测试，覆盖“临时网络失败后重试成功”和“feed 元数据对象缺失但条目仍可解析”两种场景。
+- 当前限制：本地执行环境未安装 `feedparser` 依赖，因此本次仅完成 `python3 -m py_compile` 语法检查，未在本机完成单元测试实际运行。
+- 当日验证：再次执行 `cd frontend && npm run build`，构建通过。
+
+## 2026-06-06
+
+- 使用 AI Coding Agent 继续排查“点击刷新 RSS 正文时，是否可以通过原文链接补回完整正文”这一链路，重点验证 OpenAI 新闻订阅。
+- 确认当前 `POST /api/articles/{id}/refresh-content` 已具备“同时比较 RSS 条目内容和原文页提取结果，再选更完整正文”的后端流程。
+- 新增 `backend/app/services/webpage_extractor.py` 的 SSL 证书校验失败回退逻辑，避免部分站点因本机证书链不完整而直接无法抓取原文页。
+- 新增 `backend/tests/test_webpage_extractor.py` 的回归测试，覆盖“证书校验失败后使用不校验证书上下文重试”的场景。
+- 将阅读页按钮和提示文案从“刷新 RSS 正文”调整为“从原文链接补正文”，避免用户误以为该功能只会重读 RSS 内容。
+- 实测结论：对于普通可抓取网页，该入口可以把原文页正文补回到阅读区；但 `openai.com` 当前返回 Cloudflare `403 challenge`，后端服务端抓取仍拿不到可读正文，因此 OpenAI 文章暂时只能保留 RSS 摘要。
+- 当前限制：若要对 OpenAI 这类启用机器人防护的站点稳定补全文，后续需要引入浏览器级抓取方案，例如 Playwright/WebView 渲染后提取正文，而不是仅依赖服务器侧 HTTP 请求。
+
+## 2026-06-06
+
+- 使用 AI Coding Agent 调整阅读页正文体验，保持“首次进入时只显示 RSS 已保存内容，只有点击刷新正文后才尝试读取原文链接”的交互语义。
+- 将阅读区按钮提示和刷新结果提示改得更明确，避免误解为页面初次打开时就会自动抓原文。
+- 更新 `backend/app/services/content_cleaner.py`：对于正文中无法直接显示的 `iframe`、`embed`、`object`、`video`，不再简单移除，而是替换为“打开视频原链接”的超链接，至少保留可访问入口。
+- 新增 `backend/tests/test_content_cleaner.py` 回归测试，覆盖嵌入视频替换为链接的行为。
+- 调整 `frontend/src/styles.css` 中的阅读区标题宽度约束，让标题区域不再和正文列完全共用同一窄宽度，减少过早换行。
+- 使用 AI Coding Agent 继续增强“刷新 RSS 正文”行为，面向只提供摘要的 RSS/Atom 源补充原文页正文抓取。
+- 当前刷新动作不再只依赖重新解析 feed 项内容，而是会同时尝试从文章原文链接提取正文，并在 `RSS 内容` 与 `原文页提取结果` 之间选择更完整的一份保存回数据库。
+- 新增 `backend/tests/test_refresh_content.py`，覆盖“原文页正文优先于简短摘要”的选择逻辑，以及根据原文链接构建清洗后正文载荷的行为。
+- 当前限制：本地执行 `python3 -m unittest tests.test_refresh_content` 时，当前 Python 环境缺少 `beautifulsoup4` 依赖，因此后端测试未能直接跑通；前端构建验证已通过。
+
+## 2026-06-06
+
+- 使用 AI Coding Agent 收束阅读页交互，放弃“点击后再补抓原文全文”的方案，最终保留“右侧正文只展示 RSS 已保存内容”的实现。
+- 阅读页移除了“刷新/补全文”按钮与相关提示，文章详情默认直接渲染数据库中的 RSS 内容，不再从阅读区触发原文抓取。
+- 对 RSS 文本里形如 `[Image: https://...]` 的占位内容补充前端转换逻辑，渲染时会尽量转成图片而不是裸文本。
+- 左侧订阅源列表改为显示站点 favicon 和该源文章数量；右侧正文头部移除了站点图标，只保留订阅源名称、标题及标题下方的原文链接。
+- 阅读页交互改为“点击文章即自动标记为已读，再次点击已读按钮可切回未读”，并保留手动切换能力。
+- 当日验证：执行 `npm run build --prefix frontend`，构建通过。

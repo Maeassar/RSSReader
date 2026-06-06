@@ -218,6 +218,90 @@
 - 顶部导出菜单：导出文摘 / 导出清洗后 Markdown
 - 底部笔记区：导出笔记
 
+---
+
+## 补充修复：RSS 订阅抓取稳定性
+
+文件：
+
+- `backend/app/services/feed_parser.py`
+- `backend/tests/test_feed_parser.py`
+
+针对 `https://openai.com/news/rss.xml` 一类偶发无法订阅的问题，本次补充了后端 RSS 抓取稳定性修复：
+
+- 不再只依赖 `feedparser.parse(url)` 直接抓取远端地址。
+- 改为先使用显式 HTTP 请求拉取 XML，再把返回内容交给 `feedparser` 解析。
+- 请求头增加更接近浏览器的 `User-Agent` 和 XML `Accept`，降低站点拒绝或异常断连概率。
+- 对 `Remote end closed connection without response`、`URLError` 等临时网络错误加入最多 3 次重试。
+- 对 `parsed.feed is None` 这类异常返回增加兜底，避免出现 `'NoneType' object has no attribute 'get'` 直接导致订阅失败。
+
+本地通过 `python3 -m py_compile` 验证了相关文件语法；由于当前环境未安装 `feedparser` 依赖，单元测试未能在本机实际执行。
+
+### 原文链接补正文说明
+
+当前阅读页中的“从原文链接补正文”按钮，后端流程并不是简单重新读取 RSS，而是：
+
+- 先重新解析该文章所属 RSS 条目。
+- 再尝试访问文章原文链接并提取网页正文。
+- 最后比较 RSS 内容和原文页内容，优先保存更完整的版本。
+
+这对“RSS 只给摘要、但原网站有完整正文”的订阅源是有效的。
+
+但经实际验证，`openai.com` 文章页当前启用了 Cloudflare 机器人防护：
+
+- 即使已经补上证书校验失败时的抓取回退，服务端请求原文页时仍会收到 `HTTP 403 challenge`。
+- 因此 OpenAI 新闻这类文章，当前仍可能只能显示 RSS 摘要，无法稳定补回完整正文。
+
+如果后续要继续支持这类站点，需要考虑引入浏览器级抓取或渲染方案，而不是只依赖 Python 的 HTTP 请求。
+
+### 阅读区补充优化
+
+本日还补了两项阅读体验修正：
+
+- 保持“默认展示 RSS 已保存内容，只有点击刷新正文后才尝试读取原文链接”的交互，不在初次进入文章时自动抓原网页。
+- 对正文里无法直接展示的嵌入视频或播放器占位，改为保留“打开视频原链接”的超链接，避免阅读区里只剩空白框但无法操作。
+- 同时放宽了右侧正文标题区域的宽度限制，减少标题过早换行的问题。
+
+### 最终交互收束
+
+在继续联调后，本轮又进一步收束了阅读页行为，最终版本不再保留“从阅读页补抓原文全文”的入口，而是回到更稳定的 RSS 阅读器语义：
+
+- 右侧正文默认并最终只展示 RSS 已保存内容的渲染结果。
+- 阅读区移除了“补全文/刷新正文”按钮和相关提示，不再从文章详情页触发原文抓取。
+- 标题下方保留原文链接，用户仍可随时跳转到文章原网站查看完整页面。
+- 左侧订阅源列表改为展示站点 favicon 和该源文章数量，减少仅用首字母头像带来的辨识度问题。
+- 对部分 RSS 文本里出现的 `[Image: https://...]` 占位，前端渲染阶段会尽量转换为可显示图片，而不是原样显示为纯文本。
+
+---
+
+## 2026-06-06 补充：VS Code 工作区性能排查
+
+本日另外处理了一个开发环境侧问题：在当前仓库中使用 VS Code 插件时，`Code Helper` 进程出现超过 `300% CPU` 的持续占用，导致插件响应明显变慢。
+
+排查结果：
+
+- 仓库当前文件数约为 `12,589`。
+- `frontend/node_modules` 单目录约 `159 MB`，文件数约 `12,361`。
+- 仓库还包含 `frontend/dist`、`backend/dist`、`backend/build`、`release` 等构建或生成目录。
+- 工作区此前没有 `.vscode/settings.json`，VS Code 只能依赖默认规则，插件与编辑器更容易把依赖目录和产物目录纳入监听、搜索与上下文扫描范围。
+
+本次处理：
+
+- 新增 `.vscode/settings.json`。
+- 为当前仓库补充 `files.exclude`、`files.watcherExclude`、`search.exclude`。
+- 重点排除 `frontend/node_modules`、`frontend/dist`、`backend/dist`、`backend/build`、`release`、`__pycache__`、`.pytest_cache` 与 `.git` 相关监听对象。
+
+预期效果：
+
+- 降低 VS Code 文件系统监听与搜索索引开销。
+- 降低 AI 插件在收集工作区上下文时误扫依赖目录的概率。
+- 缓解 `Code Helper` 高 CPU 与插件卡顿问题，尤其是在当前这种前端依赖已安装的课程项目仓库里。
+
+当前限制：
+
+- 该修改主要优化本地工作区扫描范围，不改变插件服务端延迟。
+- 如果后续仍偶发高 CPU，需要继续结合 VS Code 的 `Developer: Open Process Explorer` 确认是否为其他扩展、Webview 或终端任务导致。
+
 其中：
 
 - “导出清洗后 Markdown” 依赖后端保存的 `cleaned_markdown`
@@ -276,3 +360,25 @@ npm run build
 - 标签交互当前已可在前端稳定使用，但后端标签关联查询能力仍有继续补强空间。
 - 阅读页的很多样式细节已经较大程度收敛，但若后续继续追求更像成熟产品的视觉层次，建议把 `ReaderView.vue` 再拆分成更小的组件维护。
 - 当前仓库内仍存在 `frontend/dist/` 等生成物变更风险，提交前应注意只提交源码与文档，不提交构建产物。
+
+---
+
+## 2026-06-06 补充：Markdown 正文渲染
+
+本日又补了一项阅读页兼容性修正：部分 RSS 条目正文实际是 Markdown 文本，而不是 HTML，原先会被直接当普通字符串渲染，导致标题、列表、链接、图片等 Markdown 结构无法正常显示。
+
+本次处理：
+
+- 在 `ReaderView.vue` 中补充正文内容类型判断。
+- 若正文已经是 HTML，则继续按原有方式渲染。
+- 若正文看起来是 Markdown，则在前端自动转换为 HTML 后再显示。
+- 当前支持的 Markdown 结构包括：标题、无序列表、有序列表、引用、代码块、行内代码、粗体、斜体、链接和 Markdown 图片。
+
+验证：
+
+- 执行 `cd frontend && npm run build`，构建通过。
+
+当前限制：
+
+- 本次是轻量级 Markdown 渲染，不包含完整 CommonMark 全量特性。
+- 若后续确认大量订阅源会直接提供 Markdown，可考虑将 Markdown 转 HTML 下沉到后端统一处理。
