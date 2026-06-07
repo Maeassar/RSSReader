@@ -1,6 +1,6 @@
 <template>
   <div class="feed-manage-page" :class="{ embedded }">
-    <div class="page-title feed-manage-header" :class="{ embedded: embedded }">
+    <div class="page-title feed-manage-header" :class="{ embedded }">
       <div class="feed-manage-title-group">
         <h1>订阅管理</h1>
         <p v-if="embedded" class="feed-manage-subtitle">在当前阅读页直接管理订阅，不跳转整页</p>
@@ -14,40 +14,49 @@
           :disabled="syncingAll || syncingFeedId !== null"
           @click="syncAll"
         >
-          {{ syncingAll ? "正在同步..." : "同步全部" }}
+          {{ syncingAll ? '正在同步...' : '同步全部' }}
         </el-button>
-        <el-upload
-          class="opml-upload"
-          :show-file-list="false"
+        <input
+          ref="opmlFileInput"
+          class="opml-file-input"
+          type="file"
           accept=".opml,.xml"
-          :http-request="importOpml"
-          :disabled="isBusy"
-        >
-          <el-button class="feed-manage-action" :icon="Upload" :loading="importingOpml" :disabled="isBusy">
-            OPML 导入
-          </el-button>
-        </el-upload>
+          multiple
+          @change="handleOpmlFilesSelected"
+        />
+        <el-button class="feed-manage-action" :icon="Upload" :loading="importingOpml" :disabled="isBusy" @click="openOpmlFileDialog">
+          OPML 导入
+        </el-button>
+        <el-button class="feed-manage-action" :disabled="isBusy || feeds.length === 0" @click="selectAllFeeds">全选</el-button>
+        <el-button class="feed-manage-action" :disabled="isBusy || selectedFeeds.length === 0" @click="clearFeedSelection">清空</el-button>
         <el-button
           class="feed-manage-action"
-          :loading="exportingOpml"
-          :disabled="isBusy"
+          :loading="exportingOpml && exportMode === 'selected'"
+          :disabled="isBusy || selectedFeeds.length === 0"
           :icon="Download"
-          @click="exportOpml"
-          >OPML 导出</el-button
+          @click="exportSelectedOpml"
         >
+          导出选中
+        </el-button>
+        <el-button
+          class="feed-manage-action"
+          :loading="exportingOpml && exportMode === 'all'"
+          :disabled="isBusy || feeds.length === 0"
+          :icon="Download"
+          @click="exportAllOpml"
+        >
+          导出全部
+        </el-button>
+        <span class="feed-selected-count">已选 {{ selectedFeeds.length }} 个</span>
       </div>
     </div>
-    <section class="panel feed-manage-panel" :class="{ embedded: embedded }">
+    <section class="panel feed-manage-panel" :class="{ embedded }">
       <el-form class="feed-form" :inline="!embedded" @submit.prevent>
         <el-form-item label="标题">
           <el-input v-model="title" placeholder="可选" />
         </el-form-item>
         <el-form-item label="RSS URL">
-          <el-input
-            v-model="url"
-            placeholder="https://example.com/feed.xml"
-            class="url-input"
-          />
+          <el-input v-model="url" placeholder="https://example.com/feed.xml" class="url-input" />
         </el-form-item>
         <el-button
           class="feed-submit-button"
@@ -56,10 +65,58 @@
           :disabled="addingFeed || !url"
           @click="addFeed"
         >
-          {{ addingFeed ? "正在添加..." : "添加订阅" }}
+          {{ addingFeed ? '正在添加...' : '添加订阅' }}
         </el-button>
       </el-form>
-      <el-table :data="feeds" stripe table-layout="fixed" class="feed-table">
+
+      <section v-if="lastImportReport" class="result-block">
+        <div class="result-block-header">
+          <h2>OPML 导入结果</h2>
+          <span>文件 {{ lastImportReport.files }} 个，新增 {{ lastImportReport.imported }} 个，跳过 {{ lastImportReport.skipped }} 个，失败 {{ lastImportReport.failed }} 个</span>
+        </div>
+        <el-table :data="lastImportReport.results" size="small" max-height="240" table-layout="fixed">
+          <el-table-column prop="source_file" label="文件" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="url" label="URL" min-width="260" show-overflow-tooltip />
+          <el-table-column label="状态" width="92">
+            <template #default="{ row }">
+              <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="message" label="原因" min-width="260" show-overflow-tooltip />
+        </el-table>
+      </section>
+
+      <section v-if="lastSyncReport" class="result-block">
+        <div class="result-block-header">
+          <h2>同步结果</h2>
+          <span>成功 {{ lastSyncReport.success }} 个，失败 {{ lastSyncReport.failed }} 个</span>
+          <el-button size="small" text @click="router.push('/stats')">查看同步日志</el-button>
+        </div>
+        <el-table :data="lastSyncReport.results" size="small" max-height="260" table-layout="fixed">
+          <el-table-column prop="title" label="订阅源" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="url" label="URL" min-width="260" show-overflow-tooltip />
+          <el-table-column label="状态" width="92">
+            <template #default="{ row }">
+              <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="message" label="原因" min-width="260" show-overflow-tooltip />
+          <el-table-column label="建议" min-width="260" show-overflow-tooltip>
+            <template #default="{ row }">{{ syncSuggestion(row.message) }}</template>
+          </el-table-column>
+        </el-table>
+      </section>
+
+      <el-table
+        ref="feedTableRef"
+        :data="feeds"
+        stripe
+        table-layout="fixed"
+        class="feed-table"
+        @selection-change="handleFeedSelectionChange"
+      >
+        <el-table-column type="selection" width="48" />
         <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
         <el-table-column prop="url" label="URL" min-width="320" show-overflow-tooltip />
         <el-table-column label="最后同步" width="180">
@@ -69,13 +126,8 @@
         </el-table-column>
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
-            <el-button
-              size="small"
-              :loading="syncingFeedId === row.id"
-              :disabled="isBusy"
-              @click="syncFeed(row.id)"
-            >
-              {{ syncingFeedId === row.id ? "正在同步..." : "同步" }}
+            <el-button size="small" :loading="syncingFeedId === row.id" :disabled="isBusy" @click="syncFeed(row.id)">
+              {{ syncingFeedId === row.id ? '正在同步...' : '同步' }}
             </el-button>
             <el-popconfirm
               title="确定删除当前订阅吗？"
@@ -85,13 +137,7 @@
               @confirm="deleteFeed(row.id)"
             >
               <template #reference>
-                <el-button
-                  size="small"
-                  type="danger"
-                  plain
-                  :loading="deletingFeedId === row.id"
-                  :disabled="isBusy"
-                >
+                <el-button size="small" type="danger" plain :loading="deletingFeedId === row.id" :disabled="isBusy">
                   删除
                 </el-button>
               </template>
@@ -104,182 +150,282 @@
 </template>
 
 <script setup lang="ts">
-import { Download, Refresh, Upload } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
-import type { UploadRequestOptions } from "element-plus";
-import { computed, onMounted, ref } from "vue";
-import { Feed, rssApi } from "../api/client";
+import { Download, Refresh, Upload } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import type { Feed, FeedSyncReport, OPMLImportReport } from '../api/client'
+import { rssApi } from '../api/client'
+import { apiErrorMessage, showSyncReportMessage, statusTagType, syncSuggestion } from '../utils/syncDiagnostics'
 
-withDefaults(defineProps<{
-  embedded?: boolean
-}>(), {
-  embedded: false,
-});
+type FeedTableExpose = {
+  clearSelection: () => void
+  toggleRowSelection: (row: Feed, selected?: boolean) => void
+}
+
+withDefaults(
+  defineProps<{
+    embedded?: boolean
+  }>(),
+  {
+    embedded: false
+  }
+)
 
 const emit = defineEmits<{
   close: []
-}>();
+  changed: []
+}>()
 
-const feeds = ref<Feed[]>([]);
-const title = ref("");
-const url = ref("");
-const addingFeed = ref(false);
-const syncingAll = ref(false);
-const syncingFeedId = ref<number | null>(null);
-const deletingFeedId = ref<number | null>(null);
-const importingOpml = ref(false);
-const exportingOpml = ref(false);
+const router = useRouter()
+const feeds = ref<Feed[]>([])
+const selectedFeeds = ref<Feed[]>([])
+const feedTableRef = ref<FeedTableExpose | null>(null)
+const opmlFileInput = ref<HTMLInputElement | null>(null)
+const title = ref('')
+const url = ref('')
+const addingFeed = ref(false)
+const syncingAll = ref(false)
+const syncingFeedId = ref<number | null>(null)
+const deletingFeedId = ref<number | null>(null)
+const importingOpml = ref(false)
+const exportingOpml = ref(false)
+const exportMode = ref<'all' | 'selected' | null>(null)
+const lastImportReport = ref<OPMLImportReport | null>(null)
+const lastSyncReport = ref<FeedSyncReport | null>(null)
 const isBusy = computed(
   () =>
     syncingAll.value ||
     syncingFeedId.value !== null ||
     deletingFeedId.value !== null ||
     importingOpml.value ||
-    exportingOpml.value,
-);
+    exportingOpml.value
+)
 
-onMounted(loadFeeds);
+onMounted(loadFeeds)
 
 async function loadFeeds() {
-  feeds.value = await rssApi.feeds();
+  feeds.value = await rssApi.feeds()
+  selectedFeeds.value = selectedFeeds.value.filter((feed) => feeds.value.some((item) => item.id === feed.id))
 }
 
 function formatLastSyncAt(value?: string) {
-  if (!value) return "未同步";
+  if (!value) return '未同步'
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
 
-  const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
     hour12: false,
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const partMap = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
+    hourCycle: 'h23'
+  }).formatToParts(date)
+  const partMap = Object.fromEntries(parts.map((part) => [part.type, part.value]))
 
-  return `${partMap.year}/${partMap.month}/${partMap.day} ${partMap.hour}:${partMap.minute}:${partMap.second}`;
+  return `${partMap.year}/${partMap.month}/${partMap.day} ${partMap.hour}:${partMap.minute}:${partMap.second}`
 }
 
 async function addFeed() {
-  if (!url.value) return;
-  addingFeed.value = true;
+  if (!url.value) return
+  addingFeed.value = true
   try {
-    await rssApi.createFeed({ title: title.value, url: url.value });
-    title.value = "";
-    url.value = "";
-    await loadFeeds();
-    ElMessage.success("订阅已添加");
+    await rssApi.createFeed({ title: title.value, url: url.value })
+    title.value = ''
+    url.value = ''
+    await loadFeeds()
+    emit('changed')
+    ElMessage.success('订阅已添加')
   } catch (error) {
-    ElMessage.error("添加订阅失败，请检查 RSS URL 或后端状态");
+    ElMessage.error(createFeedErrorMessage(error))
   } finally {
-    addingFeed.value = false;
+    addingFeed.value = false
   }
 }
 
 async function syncFeed(id: number) {
-  syncingFeedId.value = id;
+  const feed = feeds.value.find((item) => item.id === id)
+  syncingFeedId.value = id
   try {
-    await rssApi.syncFeed(id);
-    await loadFeeds();
-    ElMessage.success("同步完成");
+    await rssApi.syncFeed(id)
+    lastSyncReport.value = null
+    await loadFeeds()
+    emit('changed')
+    ElMessage.success('同步完成')
   } catch (error) {
-    ElMessage.error("同步失败，请稍后重试");
+    const message = apiErrorMessage(error, '同步失败，请稍后重试')
+    lastSyncReport.value = {
+      total: 1,
+      success: 0,
+      failed: 1,
+      skipped: 0,
+      results: [
+        {
+          feed_id: id,
+          url: feed?.url,
+          title: feed?.title,
+          status: 'failed',
+          message,
+          feed: null
+        }
+      ]
+    }
+    ElMessage.error(message)
   } finally {
-    syncingFeedId.value = null;
+    syncingFeedId.value = null
   }
 }
 
 async function deleteFeed(id: number) {
-  deletingFeedId.value = id;
+  deletingFeedId.value = id
   try {
-    await rssApi.deleteFeed(id);
-    await loadFeeds();
-    ElMessage.success("订阅已删除");
+    await rssApi.deleteFeed(id)
+    await loadFeeds()
+    clearFeedSelection()
+    emit('changed')
+    ElMessage.success('订阅已删除')
   } catch (error) {
-    ElMessage.error("删除订阅失败，请稍后重试");
+    ElMessage.error(apiErrorMessage(error, '删除订阅失败，请稍后重试'))
   } finally {
-    deletingFeedId.value = null;
+    deletingFeedId.value = null
   }
 }
 
 async function syncAll() {
-  syncingAll.value = true;
+  syncingAll.value = true
   try {
-    const report = await rssApi.syncAll();
-    await loadFeeds();
-    showSyncReportMessage(report);
+    const report = await rssApi.syncAll()
+    lastSyncReport.value = report
+    await loadFeeds()
+    emit('changed')
+    showSyncReportMessage(report)
   } catch (error) {
-    ElMessage.error("同步全部失败，请稍后重试");
+    ElMessage.error(apiErrorMessage(error, '同步全部失败，请稍后重试'))
   } finally {
-    syncingAll.value = false;
+    syncingAll.value = false
   }
 }
 
-async function importOpml(options: UploadRequestOptions) {
-  importingOpml.value = true;
+function openOpmlFileDialog() {
+  if (isBusy.value) return
+  if (opmlFileInput.value) opmlFileInput.value.value = ''
+  opmlFileInput.value?.click()
+}
+
+async function handleOpmlFilesSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  if (!files.length) return
+  importingOpml.value = true
   try {
-    const report = await rssApi.importOpml(options.file as File);
-    await loadFeeds();
-    if (report.failed > 0 && report.imported === 0) {
-      ElMessage.error(`OPML 导入失败 ${report.failed} 个，跳过 ${report.skipped} 个`);
-    } else if (report.failed > 0 || report.skipped > 0) {
-      ElMessage.warning(`OPML 导入完成：新增 ${report.imported} 个，跳过 ${report.skipped} 个，失败 ${report.failed} 个`);
-    } else {
-      ElMessage.success(`OPML 导入完成：新增 ${report.imported} 个订阅`);
-    }
+    const report = await rssApi.importOpml(files)
+    lastImportReport.value = report
+    await loadFeeds()
+    emit('changed')
+    showImportReportMessage(report)
   } catch (error) {
-    ElMessage.error("OPML 导入失败，请检查文件格式或订阅源地址");
+    ElMessage.error(apiErrorMessage(error, 'OPML 导入失败，请检查文件格式或订阅源地址'))
   } finally {
-    importingOpml.value = false;
+    importingOpml.value = false
+    input.value = ''
   }
 }
 
-async function exportOpml() {
-  exportingOpml.value = true;
+async function exportSelectedOpml() {
+  if (selectedFeeds.value.length === 0) {
+    ElMessage.warning('请先选择要导出的订阅源')
+    return
+  }
+  await downloadOpml(
+    selectedFeeds.value.map((feed) => feed.id),
+    'rssreader-selected-subscriptions.opml',
+    'selected'
+  )
+}
+
+async function exportAllOpml() {
+  await downloadOpml(undefined, 'rssreader-subscriptions.opml', 'all')
+}
+
+async function downloadOpml(feedIds: number[] | undefined, filename: string, mode: 'all' | 'selected') {
+  exportingOpml.value = true
+  exportMode.value = mode
   try {
-    const blob = await rssApi.exportOpml();
-    triggerBrowserDownload(blob, "rssreader-subscriptions.opml");
-    ElMessage.success("OPML 已导出");
+    const blob = await rssApi.exportOpml(feedIds)
+    triggerBrowserDownload(blob, filename)
+    ElMessage.success('OPML 已导出')
   } catch (error) {
-    ElMessage.error("OPML 导出失败，请确认后端已启动");
+    ElMessage.error(apiErrorMessage(error, 'OPML 导出失败，请确认后端已启动或已选择有效订阅源'))
   } finally {
-    exportingOpml.value = false;
+    exportingOpml.value = false
+    exportMode.value = null
   }
 }
 
-function showSyncReportMessage(report: { total: number; success: number; failed: number; skipped: number }) {
+function selectAllFeeds() {
+  feedTableRef.value?.clearSelection()
+  feeds.value.forEach((feed) => feedTableRef.value?.toggleRowSelection(feed, true))
+  if (!feedTableRef.value) selectedFeeds.value = [...feeds.value]
+}
+
+function clearFeedSelection() {
+  feedTableRef.value?.clearSelection()
+  selectedFeeds.value = []
+}
+
+function handleFeedSelectionChange(selection: Feed[]) {
+  selectedFeeds.value = selection
+}
+
+function showImportReportMessage(report: OPMLImportReport) {
   if (report.total === 0) {
-    ElMessage.warning("当前没有可同步的订阅");
-    return;
+    ElMessage.warning('OPML 文件中没有可导入的订阅源')
+    return
   }
-  if (report.failed > 0 && report.success === 0) {
-    ElMessage.error(`同步失败：${report.failed} 个订阅失败`);
-    return;
+  if (report.failed > 0 && report.imported === 0) {
+    ElMessage.error(`OPML 导入失败 ${report.failed} 个，跳过 ${report.skipped} 个`)
+    return
   }
-  if (report.failed > 0) {
-    ElMessage.warning(`同步完成：${report.success} 个成功，${report.failed} 个失败`);
-    return;
+  if (report.failed > 0 || report.skipped > 0) {
+    ElMessage.warning(`OPML 导入完成：新增 ${report.imported} 个，跳过 ${report.skipped} 个，失败 ${report.failed} 个`)
+    return
   }
-  ElMessage.success(`全部订阅同步完成：${report.success} 个成功`);
+  ElMessage.success(`OPML 导入完成：新增 ${report.imported} 个订阅`)
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    imported: '新增',
+    skipped: '跳过',
+    failed: '失败',
+    success: '成功',
+    pending: '待同步'
+  }
+  return labels[status] || status
+}
+
+function createFeedErrorMessage(error: unknown) {
+  const message = apiErrorMessage(error, '添加订阅失败，请检查 RSS URL 或后端状态')
+  if (message.toLowerCase().includes('feed already exists')) {
+    return '这条订阅已经存在，可以直接同步或在列表中查看'
+  }
+  return message
 }
 
 function triggerBrowserDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 </script>
 
@@ -321,6 +467,11 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   margin-bottom: 0;
 }
 
+.feed-manage-toolbar {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .feed-manage-panel {
   padding: 18px 20px;
   border-radius: 24px;
@@ -353,6 +504,41 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   --el-button-hover-border-color: color-mix(in srgb, var(--theme-accent) 44%, var(--app-border) 56%);
 }
 
+.feed-selected-count {
+  color: #7a8799;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.opml-file-input {
+  display: none;
+}
+
+.result-block {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--app-border) 72%, transparent 28%);
+}
+
+.result-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #7a8799;
+  font-size: 13px;
+}
+
+.result-block-header h2 {
+  margin: 0;
+  color: inherit;
+  font-size: 15px;
+  font-weight: 800;
+}
+
 .feed-table {
   border-radius: 18px;
   overflow: hidden;
@@ -375,10 +561,6 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 
 .url-input {
   width: 360px;
-}
-
-.opml-upload {
-  display: inline-flex;
 }
 
 @media (max-width: 960px) {

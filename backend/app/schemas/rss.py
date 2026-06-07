@@ -48,14 +48,16 @@ class FeedSyncReport(BaseModel):
 
 
 class OPMLImportItem(BaseModel):
-    url: str
+    url: str | None = None
     title: str | None = None
     status: Literal["imported", "skipped", "failed"]
     message: str
     feed: FeedRead | None = None
+    source_file: str | None = None
 
 
 class OPMLImportReport(BaseModel):
+    files: int = 0
     total: int
     imported: int
     skipped: int
@@ -139,6 +141,8 @@ class AIResultRead(BaseModel):
 class SyncLogRead(BaseModel):
     id: int
     feed_id: int | None = None
+    url: str | None = None
+    feed_title: str | None = None
     status: Literal["success", "failed", "pending"]
     message: str
     created_at: datetime

@@ -112,6 +112,21 @@ class MockRepository:
         self.feeds.append(feed)
         return deepcopy(feed)
 
+    def create_feed_metadata(self, payload):
+        feed = self.create_feed(payload)
+        self.sync_logs.append(
+            {
+                "id": self._next_id(self.sync_logs),
+                "feed_id": feed["id"],
+                "url": feed["url"],
+                "feed_title": feed["title"],
+                "status": "pending",
+                "message": "Imported feed metadata from OPML. Run sync to fetch articles.",
+                "created_at": now(),
+            }
+        )
+        return feed
+
     def update_feed(self, feed_id, payload):
         feed = self._find(self.feeds, feed_id)
         data = payload.model_dump(exclude_unset=True)
@@ -204,7 +219,18 @@ class MockRepository:
         return deepcopy(self.sync_logs)
 
     def log_feed_event(self, feed_id, url, status, message):
-        self.sync_logs.append({"id": self._next_id(self.sync_logs), "feed_id": feed_id, "status": status, "message": message, "created_at": now()})
+        feed = next((item for item in self.feeds if item["id"] == feed_id), None)
+        self.sync_logs.append(
+            {
+                "id": self._next_id(self.sync_logs),
+                "feed_id": feed_id,
+                "url": url,
+                "feed_title": feed["title"] if feed else None,
+                "status": status,
+                "message": message,
+                "created_at": now(),
+            }
+        )
 
     def stats(self):
         total_input = sum(item["input_tokens"] for item in self.ai_results) or 1024
