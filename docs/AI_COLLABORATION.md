@@ -197,3 +197,17 @@
 - 左侧订阅源列表改为显示站点 favicon 和该源文章数量；右侧正文头部移除了站点图标，只保留订阅源名称、标题及标题下方的原文链接。
 - 阅读页交互改为“点击文章即自动标记为已读，再次点击已读按钮可切回未读”，并保留手动切换能力。
 - 当日验证：执行 `npm run build --prefix frontend`，构建通过。
+
+## 2026-06-07
+
+- 使用 AI Coding Agent 优化 OPML 导入、导出、同步反馈和桌面端 RSS 添加体验。
+- OPML 导入改为支持一次选择多个 `.opml`/`.xml` 文件，并在导入阶段只创建订阅元数据，不再立即联网同步文章，避免订阅源较多时前端等待后端长时间处理。
+- OPML 导出新增订阅源勾选、全选、清空、导出选中和导出全部能力，方便只迁移部分订阅源。
+- 同步失败反馈补充订阅源标题、URL、失败原因和处理建议；首页“同步全部”和订阅管理页都会展示逐项同步结果。
+- 后端 RSS 抓取补充浏览器化请求头、XML `Accept`、超时控制和临时网络失败重试，并把 HTTP、DNS、SSL、无效 RSS 等问题转成更可读的错误消息。
+- 修复 BBC News 同步时同一批 RSS 条目中重复 `link` 触发 `UNIQUE constraint failed: entries.feed_id, entries.link` 的问题，保存前会按 `guid`/`link` 做批内去重。
+- 修复 OpenAI RSS 在桌面端重复添加和重新添加时的超时体验：添加前先检查订阅 URL 是否已存在，已存在会直接提示；RSS 同步阶段不再逐篇抓取原文页，只保存 RSS/Atom 自带内容。
+- 为手工验证准备了 `manual-opml-test-a.opml`、`manual-opml-test-b.opml`、`manual-opml-test-broken.opml` 和 `manual-opml-test-c-many.opml`，分别覆盖正常导入、重复/无效 URL、破损 XML 和多订阅源导入场景。
+- 新增或更新后端回归测试，覆盖多 OPML 文件导入、选中导出、同步不中断、RSS 抓取重试、重复条目去重和已存在订阅先查重。
+- 当日验证：执行 `..\.venv\Scripts\python.exe -m unittest tests.test_feed_parser tests.test_opml_sync` 通过，执行 `node_modules\.bin\vue-tsc.cmd --noEmit` 通过；临时数据库完整添加 `https://openai.com/news/rss.xml` 用时约 9.2 秒。
+- 当前限制：同步仍是同步请求流程，没有新增持久化后台任务队列；若源站本身拒绝访问或网络环境不可达，仍需要用户查看同步日志并按建议处理。

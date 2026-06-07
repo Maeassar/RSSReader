@@ -69,7 +69,7 @@ export interface FeedSyncItem {
   title?: string
   status: 'success' | 'failed' | 'skipped'
   message: string
-  feed?: Feed
+  feed?: Feed | null
 }
 
 export interface FeedSyncReport {
@@ -81,19 +81,31 @@ export interface FeedSyncReport {
 }
 
 export interface OPMLImportItem {
-  url: string
+  url?: string | null
   title?: string
   status: 'imported' | 'skipped' | 'failed'
   message: string
-  feed?: Feed
+  feed?: Feed | null
+  source_file?: string
 }
 
 export interface OPMLImportReport {
+  files: number
   total: number
   imported: number
   skipped: number
   failed: number
   results: OPMLImportItem[]
+}
+
+export interface SyncLog {
+  id: number
+  feed_id?: number | null
+  url?: string | null
+  feed_title?: string | null
+  status: 'success' | 'failed' | 'pending'
+  message: string
+  created_at: string
 }
 
 export interface BatchDigestExportRequest {
@@ -113,16 +125,26 @@ export interface BatchDigestExportResponse {
 
 export const rssApi = {
   feeds: () => api.get<Feed[]>('/feeds').then((res) => res.data),
-  createFeed: (payload: { title?: string; url: string }) => api.post<Feed>('/feeds', payload).then((res) => res.data),
+  createFeed: (payload: { title?: string; url: string }) => api.post<Feed>('/feeds', payload, { timeout: 60000 }).then((res) => res.data),
   deleteFeed: (id: number) => api.delete<OperationResult>(`/feeds/${id}`).then((res) => res.data),
-  syncFeed: (id: number) => api.post<Feed>(`/feeds/${id}/sync`).then((res) => res.data),
-  syncAll: () => api.post<FeedSyncReport>('/feeds/sync-all').then((res) => res.data),
-  importOpml: (file: File) => {
+  syncFeed: (id: number) => api.post<Feed>(`/feeds/${id}/sync`, null, { timeout: 60000 }).then((res) => res.data),
+  syncAll: () => api.post<FeedSyncReport>('/feeds/sync-all', null, { timeout: 120000 }).then((res) => res.data),
+  importOpml: (input: File | File[]) => {
+    const files = Array.isArray(input) ? input : [input]
     const formData = new FormData()
-    formData.append('file', file)
-    return api.post<OPMLImportReport>('/opml/import', formData).then((res) => res.data)
+    files.forEach((file) => formData.append('files', file))
+    return api.post<OPMLImportReport>('/opml/import', formData, { timeout: 30000 }).then((res) => res.data)
   },
-  exportOpml: () => api.get<Blob>('/opml/export', { responseType: 'blob' }).then((res) => res.data),
+  exportOpml: (feedIds?: number[]) => {
+    const params = new URLSearchParams()
+    feedIds?.forEach((id) => params.append('feed_ids', String(id)))
+    return api
+      .get<Blob>('/opml/export', {
+        params: feedIds?.length ? params : undefined,
+        responseType: 'blob'
+      })
+      .then((res) => res.data)
+  },
   articles: (params?: Record<string, unknown>) => api.get<Article[]>('/articles', { params }).then((res) => res.data),
   article: (id: number) => api.get<Article>(`/articles/${id}`).then((res) => res.data),
   refreshArticleContent: (id: number) => api.post<Article>(`/articles/${id}/refresh-content`).then((res) => res.data),
@@ -142,5 +164,5 @@ export const rssApi = {
   translate: (articleId: number) => api.post<AIResult>(`/ai/translate/${articleId}`).then((res) => res.data),
   suggestTags: (articleId: number) => api.post<AIResult>(`/ai/tag-suggest/${articleId}`).then((res) => res.data),
   llmStats: () => api.get('/stats/llm').then((res) => res.data),
-  syncLogs: () => api.get('/logs/sync').then((res) => res.data)
+  syncLogs: () => api.get<SyncLog[]>('/logs/sync').then((res) => res.data)
 }

@@ -36,11 +36,16 @@
             v-for="log in logs"
             :key="log.id"
             :timestamp="formatLogTime(log.created_at)"
-            :type="log.status === 'success' ? 'success' : log.status === 'failed' ? 'danger' : 'info'"
+            :type="statusTagType(log.status)"
           >
             <div class="stats-log-item">
-              <div class="stats-log-message">{{ log.message }}</div>
-              <div class="stats-log-status" :class="log.status">{{ log.status || 'info' }}</div>
+              <div class="stats-log-main">
+                <div class="stats-log-title">{{ log.feed_title || log.url || '未关联订阅源' }}</div>
+                <div v-if="log.url" class="stats-log-url">{{ log.url }}</div>
+                <div class="stats-log-message">{{ log.message }}</div>
+                <div v-if="log.status === 'failed'" class="stats-log-suggestion">{{ syncSuggestion(log.message) }}</div>
+              </div>
+              <div class="stats-log-status" :class="log.status">{{ statusLabel(log.status) }}</div>
             </div>
           </el-timeline-item>
         </el-timeline>
@@ -52,10 +57,12 @@
 <script setup lang="ts">
 import { Refresh } from '@element-plus/icons-vue'
 import { onMounted, ref } from 'vue'
+import type { SyncLog } from '../api/client'
 import { rssApi } from '../api/client'
+import { statusTagType, syncSuggestion } from '../utils/syncDiagnostics'
 
 const stats = ref<Record<string, any>>({})
-const logs = ref<any[]>([])
+const logs = ref<SyncLog[]>([])
 
 onMounted(load)
 
@@ -73,6 +80,15 @@ function formatLogTime(value: string) {
     hour: '2-digit',
     minute: '2-digit'
   }).format(date)
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    success: '成功',
+    failed: '失败',
+    pending: '待同步'
+  }
+  return labels[status] || status
 }
 </script>
 
@@ -137,8 +153,26 @@ function formatLogTime(value: string) {
   gap: 12px;
 }
 
+.stats-log-main {
+  min-width: 0;
+}
+
+.stats-log-title {
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.stats-log-url,
+.stats-log-suggestion {
+  color: #7a8799;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
 .stats-log-message {
   line-height: 1.6;
+  word-break: break-word;
 }
 
 .stats-log-status {

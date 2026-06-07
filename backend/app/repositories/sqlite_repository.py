@@ -26,8 +26,47 @@ class SQLiteRepository:
         row = self._feed_row(feed_id)
         return self._feed(row)
 
+    def create_feed_metadata(self, payload):
+        url = str(payload.url)
+        timestamp = now()
+        title = payload.title or url
+        with get_connection() as conn:
+            try:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO feeds (
+                        url, title, description, site_url, language,
+                        last_build_date, last_fetched_at, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        url,
+                        title,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("Feed already exists") from exc
+            feed_id = cursor.lastrowid
+            conn.execute(
+                "INSERT INTO feed_fetch_logs (feed_id, url, status, message, fetched_at) VALUES (?, ?, ?, ?, ?)",
+                (feed_id, url, "pending", "Imported feed metadata from OPML. Run sync to fetch articles.", timestamp),
+            )
+            row = conn.execute("SELECT * FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+        return self._feed(row)
+
     def create_feed(self, payload):
         url = str(payload.url)
+        if self._feed_exists_by_url(url):
+            raise ValueError("Feed already exists")
+
         try:
             parsed = self._parse_feed(url)
         except Exception as exc:
@@ -210,11 +249,20 @@ class SQLiteRepository:
 
     def list_logs(self):
         with get_connection() as conn:
-            rows = conn.execute("SELECT * FROM feed_fetch_logs ORDER BY fetched_at DESC").fetchall()
+            rows = conn.execute(
+                """
+                SELECT feed_fetch_logs.*, feeds.title AS feed_title
+                FROM feed_fetch_logs
+                LEFT JOIN feeds ON feeds.id = feed_fetch_logs.feed_id
+                ORDER BY fetched_at DESC
+                """
+            ).fetchall()
         return [
             {
                 "id": row["id"],
                 "feed_id": row["feed_id"],
+                "url": row["url"],
+                "feed_title": row["feed_title"],
                 "status": row["status"],
                 "message": row["message"],
                 "created_at": row["fetched_at"],
@@ -343,8 +391,19 @@ class SQLiteRepository:
     ) -> tuple[list[dict], list[dict]]:
         pending_entries = []
         existing_entries = []
+        seen_guids: set[str] = set()
+        seen_links: set[str] = set()
         for entry in entries:
-            if self._entry_exists(conn, feed_id, entry.get("guid"), entry.get("link")):
+            guid = entry.get("guid")
+            link = entry.get("link")
+            if (guid and guid in seen_guids) or (link and link in seen_links):
+                continue
+            if guid:
+                seen_guids.add(guid)
+            if link:
+                seen_links.add(link)
+
+            if self._entry_exists(conn, feed_id, guid, link):
                 existing_entries.append(entry)
             else:
                 pending_entries.append(entry)
@@ -460,6 +519,11 @@ class SQLiteRepository:
         if row is None:
             raise ValueError(f"Feed {feed_id} not found")
         return row
+
+    def _feed_exists_by_url(self, url: str) -> bool:
+        with get_connection() as conn:
+            row = conn.execute("SELECT id FROM feeds WHERE url = ?", (url,)).fetchone()
+        return row is not None
 
     def _log(self, feed_id: int | None, url: str, status: str, message: str) -> None:
         with get_connection() as conn:

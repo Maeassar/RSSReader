@@ -64,7 +64,9 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="manage-feeds">管理订阅源</el-dropdown-item>
-                  <el-dropdown-item command="sync-feeds">同步全部订阅</el-dropdown-item>
+                  <el-dropdown-item command="sync-feeds" :disabled="syncingAllFeeds">
+                    {{ syncingAllFeeds ? '正在同步全部' : '同步全部订阅' }}
+                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -105,9 +107,9 @@
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="sync">
+                  <el-dropdown-item command="sync" :disabled="syncingAllFeeds">
                     <el-icon><Refresh /></el-icon>
-                    <span>同步全部</span>
+                    <span>{{ syncingAllFeeds ? '正在同步全部' : '同步全部' }}</span>
                   </el-dropdown-item>
                   <el-dropdown-item command="batch-export">
                     <el-icon><Files /></el-icon>
@@ -285,6 +287,22 @@
       <section v-if="feedManagerOpen" class="panel feed-manager-overlay">
         <FeedManageView embedded @close="closeFeedManager" @changed="handleFeedManagerChanged" />
       </section>
+
+      <el-dialog v-model="homeSyncDialogOpen" title="同步结果" width="720px">
+        <el-table :data="homeSyncResults" size="small" max-height="320" table-layout="fixed">
+          <el-table-column prop="title" label="订阅源" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="url" label="URL" min-width="260" show-overflow-tooltip />
+          <el-table-column label="状态" width="92">
+            <template #default="{ row }">
+              <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="message" label="原因" min-width="260" show-overflow-tooltip />
+          <el-table-column label="建议" min-width="260" show-overflow-tooltip>
+            <template #default="{ row }">{{ syncSuggestion(row.message) }}</template>
+          </el-table-column>
+        </el-table>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -294,9 +312,10 @@ import { Check, CollectionTag, Download, Files, MagicStick, MoreFilled, Plus, Re
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { Article } from '../api/client'
+import type { Article, FeedSyncReport } from '../api/client'
 import { rssApi } from '../api/client'
 import { useReaderStore } from '../stores/reader'
+import { apiErrorMessage, showSyncReportMessage, statusTagType, syncSuggestion } from '../utils/syncDiagnostics'
 import FeedManageView from './FeedManageView.vue'
 
 const store = useReaderStore()
@@ -315,6 +334,9 @@ const newTagColor = ref('#5b8def')
 const failedThumbnailKeys = ref<Set<string>>(new Set())
 const stableArticleThumbnails = ref<Record<number, string>>({})
 const failedFeedIconIds = ref<Set<number>>(new Set())
+const syncingAllFeeds = ref(false)
+const homeSyncDialogOpen = ref(false)
+const lastHomeSyncReport = ref<FeedSyncReport | null>(null)
 
 const renderedArticleHtml = computed(() => {
   const article = store.selectedArticle
@@ -359,6 +381,7 @@ const currentListTitle = computed(() => {
 })
 
 const summaryClampStyle = computed(() => ({ WebkitLineClamp: String(store.summaryLineCount) }))
+const homeSyncResults = computed(() => lastHomeSyncReport.value?.results ?? [])
 
 onMounted(async () => {
   window.addEventListener('rssreader:background-sync', handleBackgroundSync)
@@ -758,9 +781,32 @@ async function runTranslate() {
 }
 
 async function syncAll() {
-  const report = await rssApi.syncAll()
-  await store.loadAll()
-  ElMessage.success(`同步完成：${report.success} 个成功`)
+  if (syncingAllFeeds.value) return
+  syncingAllFeeds.value = true
+  try {
+    const report = await rssApi.syncAll()
+    lastHomeSyncReport.value = report
+    await store.loadAll()
+    await loadNote()
+    showSyncReportMessage(report)
+    if (report.failed > 0) {
+      homeSyncDialogOpen.value = true
+    }
+  } catch (error) {
+    ElMessage.error(apiErrorMessage(error, '同步全部失败，请稍后重试'))
+  } finally {
+    syncingAllFeeds.value = false
+  }
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    success: '成功',
+    failed: '失败',
+    skipped: '跳过',
+    pending: '待同步'
+  }
+  return labels[status] || status
 }
 
 function exportNote() {

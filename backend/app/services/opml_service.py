@@ -31,75 +31,109 @@ def parse_opml_feeds(text: str) -> list[dict[str, str | None]]:
     return feeds
 
 
-async def import_opml(file):
-    content = await file.read()
-    text = _decode_opml(content)
-    feed_items = parse_opml_feeds(text)
+async def import_opml(files):
+    upload_files = list(files if isinstance(files, (list, tuple)) else [files])
     existing_feeds = {feed["url"].strip(): feed for feed in repository.list_feeds()}
-    seen_urls = set(existing_feeds)
+    imported_urls: set[str] = set()
     results = []
 
-    for item in feed_items:
-        url = item["url"] or ""
-        title = item.get("title")
-        if url in seen_urls:
-            results.append(
-                {
-                    "url": url,
-                    "title": title,
-                    "status": "skipped",
-                    "message": "Feed already exists.",
-                    "feed": existing_feeds.get(url),
-                }
-            )
-            continue
-
+    for file in upload_files:
+        source_file = getattr(file, "filename", None) or "subscriptions.opml"
         try:
-            feed = repository.create_feed(FeedCreate(title=title, url=url))
-        except ValidationError as exc:
-            message = _validation_message(exc)
-            _log_failed_import(url, message)
-            results.append(
-                {
-                    "url": url,
-                    "title": title,
-                    "status": "failed",
-                    "message": message,
-                    "feed": None,
-                }
-            )
-            continue
+            feed_items = await _read_opml_file(file)
         except ValueError as exc:
-            message = str(exc)
-            status = "skipped" if "already exists" in message.lower() else "failed"
-            if status == "failed":
-                _log_failed_import(url, message)
             results.append(
                 {
-                    "url": url,
-                    "title": title,
-                    "status": status,
-                    "message": message,
+                    "url": None,
+                    "title": None,
+                    "status": "failed",
+                    "message": str(exc),
                     "feed": None,
+                    "source_file": source_file,
                 }
             )
-            if status == "skipped":
-                seen_urls.add(url)
             continue
 
-        existing_feeds[url] = feed
-        seen_urls.add(url)
-        results.append(
-            {
-                "url": url,
-                "title": title or feed["title"],
-                "status": "imported",
-                "message": "Feed imported and synced.",
-                "feed": feed,
-            }
-        )
+        for item in feed_items:
+            raw_url = item["url"] or ""
+            title = item.get("title")
+            try:
+                payload = FeedCreate(title=title, url=raw_url)
+            except ValidationError as exc:
+                message = _validation_message(exc)
+                _log_failed_import(raw_url, message)
+                results.append(
+                    {
+                        "url": raw_url,
+                        "title": title,
+                        "status": "failed",
+                        "message": message,
+                        "feed": None,
+                        "source_file": source_file,
+                    }
+                )
+                continue
+
+            url = str(payload.url)
+            if url in imported_urls:
+                results.append(
+                    {
+                        "url": url,
+                        "title": title,
+                        "status": "skipped",
+                        "message": "Duplicate feed in selected OPML files.",
+                        "feed": None,
+                        "source_file": source_file,
+                    }
+                )
+                continue
+            if url in existing_feeds:
+                results.append(
+                    {
+                        "url": url,
+                        "title": title,
+                        "status": "skipped",
+                        "message": "Feed already exists.",
+                        "feed": existing_feeds.get(url),
+                        "source_file": source_file,
+                    }
+                )
+                continue
+
+            try:
+                feed = repository.create_feed_metadata(payload)
+            except ValueError as exc:
+                message = str(exc)
+                status = "skipped" if "already exists" in message.lower() else "failed"
+                if status == "failed":
+                    _log_failed_import(url, message)
+                results.append(
+                    {
+                        "url": url,
+                        "title": title,
+                        "status": status,
+                        "message": message,
+                        "feed": None,
+                        "source_file": source_file,
+                    }
+                )
+                continue
+
+            existing_feeds[url] = feed
+            imported_urls.add(url)
+            results.append(
+                {
+                    "url": url,
+                    "title": title or feed["title"],
+                    "status": "imported",
+                    "message": "Feed imported. Run sync to fetch articles.",
+                    "feed": feed,
+                    "source_file": source_file,
+                }
+            )
 
     return {
+        "files": len(upload_files),
         "total": len(results),
         "imported": sum(1 for item in results if item["status"] == "imported"),
         "skipped": sum(1 for item in results if item["status"] == "skipped"),
@@ -108,14 +142,21 @@ async def import_opml(file):
     }
 
 
-def export_opml():
+def export_opml(feed_ids: list[int] | None = None):
+    feeds = repository.list_feeds()
+    if feed_ids is not None:
+        selected_ids = set(feed_ids)
+        feeds = [feed for feed in feeds if feed["id"] in selected_ids]
+        if not feeds:
+            raise ValueError("No matching feeds found for export.")
+
     root = ET.Element("opml", {"version": "2.0"})
     head = ET.SubElement(root, "head")
     ET.SubElement(head, "title").text = "RSSReader Subscriptions"
     ET.SubElement(head, "dateCreated").text = datetime.now(timezone.utc).isoformat()
     body = ET.SubElement(root, "body")
 
-    for feed in repository.list_feeds():
+    for feed in feeds:
         title = feed.get("title") or feed["url"]
         attributes = {
             "text": title,
@@ -128,6 +169,12 @@ def export_opml():
         ET.SubElement(body, "outline", attributes)
 
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + ET.tostring(root, encoding="unicode")
+
+
+async def _read_opml_file(file) -> list[dict[str, str | None]]:
+    content = await file.read()
+    text = _decode_opml(content)
+    return parse_opml_feeds(text)
 
 
 def _decode_opml(content: bytes) -> str:
