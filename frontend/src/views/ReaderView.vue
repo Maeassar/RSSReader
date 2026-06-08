@@ -1,5 +1,5 @@
 <template>
-  <div class="reader-shell">
+  <div class="reader-shell" :class="readerShellClass">
     <div class="reader-grid" v-loading="store.loading">
       <section class="panel sidebar-panel">
         <div class="sidebar-header">
@@ -72,29 +72,31 @@
             </el-dropdown>
           </div>
         </div>
-        <div class="sidebar-group-content sidebar-feed-list">
-          <button
-            v-for="feed in store.feeds"
-            :key="feed.id"
-            type="button"
-            class="sidebar-feed-button"
-            :class="{ active: activeFeedId === feed.id }"
-            @click="applyFeedFilter(feed.id)"
-          >
-            <span class="sidebar-feed-mark">
-              <img
-                v-if="feedFaviconUrl(feed)"
-                :src="feedFaviconUrl(feed) || ''"
-                :alt="`${feed.title} logo`"
-                class="sidebar-feed-icon"
-                @error="handleFeedIconError(feed.id)"
-              />
-              <span v-else class="sidebar-feed-icon-fallback"></span>
-            </span>
-            <span class="sidebar-feed-name" :title="feed.title">{{ feed.title }}</span>
-            <span class="sidebar-feed-article-count">{{ feedArticleCount(feed.id) }}</span>
-          </button>
-        </div>
+        <el-scrollbar class="sidebar-feed-scrollbar">
+          <div class="sidebar-group-content sidebar-feed-list">
+            <button
+              v-for="feed in store.feeds"
+              :key="feed.id"
+              type="button"
+              class="sidebar-feed-button"
+              :class="{ active: activeFeedId === feed.id }"
+              @click="applyFeedFilter(feed.id)"
+            >
+              <span class="sidebar-feed-mark">
+                <img
+                  v-if="feedFaviconUrl(feed)"
+                  :src="feedFaviconUrl(feed) || ''"
+                  :alt="`${feed.title} logo`"
+                  class="sidebar-feed-icon"
+                  @error="handleFeedIconError(feed.id)"
+                />
+                <span v-else class="sidebar-feed-icon-fallback"></span>
+              </span>
+              <span class="sidebar-feed-name" :title="feed.title">{{ feed.title }}</span>
+              <span class="sidebar-feed-article-count">{{ feedArticleCount(feed.id) }}</span>
+            </button>
+          </div>
+        </el-scrollbar>
       </section>
 
       <section v-if="!feedManagerOpen" class="panel scroll-panel article-list-panel">
@@ -337,6 +339,7 @@ const failedFeedIconIds = ref<Set<number>>(new Set())
 const syncingAllFeeds = ref(false)
 const homeSyncDialogOpen = ref(false)
 const lastHomeSyncReport = ref<FeedSyncReport | null>(null)
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1440)
 
 const renderedArticleHtml = computed(() => {
   const article = store.selectedArticle
@@ -382,9 +385,15 @@ const currentListTitle = computed(() => {
 
 const summaryClampStyle = computed(() => ({ WebkitLineClamp: String(store.summaryLineCount) }))
 const homeSyncResults = computed(() => lastHomeSyncReport.value?.results ?? [])
+const readerShellClass = computed(() => ({
+  'sidebar-hidden': viewportWidth.value <= 1220,
+  'article-list-hidden': viewportWidth.value <= 900 && Boolean(store.selectedArticle) && !feedManagerOpen.value
+}))
 
 onMounted(async () => {
   window.addEventListener('rssreader:background-sync', handleBackgroundSync)
+  window.addEventListener('resize', handleWindowResize)
+  handleWindowResize()
   await store.loadAll()
   const articleId = route.query.article
   if (articleId) {
@@ -395,7 +404,10 @@ onMounted(async () => {
   ensureVisibleSelection()
 })
 
-onUnmounted(() => window.removeEventListener('rssreader:background-sync', handleBackgroundSync))
+onUnmounted(() => {
+  window.removeEventListener('rssreader:background-sync', handleBackgroundSync)
+  window.removeEventListener('resize', handleWindowResize)
+})
 
 watch(() => store.selectedArticle?.id, loadNote)
 watch(renderedArticleHtml, decorateArticleLinks, { flush: 'post' })
@@ -424,6 +436,10 @@ watch(
 async function handleBackgroundSync() {
   await store.loadAll()
   await loadNote()
+}
+
+function handleWindowResize() {
+  viewportWidth.value = window.innerWidth
 }
 
 async function handleFeedManagerChanged() {
@@ -826,10 +842,29 @@ function exportNote() {
 <style scoped>
 .reader-shell {
   position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.reader-shell.sidebar-hidden .sidebar-panel {
+  display: none;
+}
+
+.reader-shell.article-list-hidden .article-list-panel {
+  display: none;
+}
+
+.reader-shell.sidebar-hidden .feed-manager-overlay {
+  grid-column: 1 / 3;
 }
 
 .sidebar-panel {
   height: 100%;
+  min-height: 0;
   padding: 10px 14px 16px;
   background: color-mix(in srgb, var(--app-surface-strong) 38%, var(--app-bg) 62%);
   border-color: color-mix(in srgb, var(--app-border) 76%, transparent 24%);
@@ -845,10 +880,10 @@ function exportNote() {
   position: sticky;
   top: 0;
   z-index: 2;
-  margin: -10px -14px 8px;
-  padding: 12px 14px 10px;
-  background: color-mix(in srgb, var(--app-surface-strong) 70%, var(--app-bg) 30%);
-  border-bottom: 1px solid color-mix(in srgb, var(--app-border) 68%, transparent 32%);
+  margin: 0 0 8px;
+  padding: 4px 0 6px;
+  background: transparent;
+  border-bottom: 0;
 }
 
 .sidebar-header h2,
@@ -928,10 +963,16 @@ function exportNote() {
   cursor: pointer;
 }
 
+.sidebar-feed-scrollbar {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .sidebar-feed-list {
   margin-bottom: 0;
-  overflow: hidden;
   align-content: start;
+  padding-bottom: 8px;
+  padding-right: 4px;
 }
 
 .sidebar-chevron {
@@ -1040,7 +1081,13 @@ function exportNote() {
 }
 
 .article-list-panel {
+  position: relative;
+  height: 100%;
+  min-height: 0;
   overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   background: color-mix(in srgb, var(--app-surface-strong) 38%, var(--app-bg) 62%);
   border-color: color-mix(in srgb, var(--app-border) 76%, transparent 24%);
   border-radius: 0;
@@ -1163,6 +1210,13 @@ function exportNote() {
 }
 
 .reader-detail-panel {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   background: color-mix(in srgb, var(--app-surface-strong) 94%, white 6%);
   border-color: color-mix(in srgb, var(--app-border) 78%, transparent 22%);
   border-radius: 0;
@@ -1340,13 +1394,18 @@ function exportNote() {
   grid-column: 2 / 4;
   grid-row: 1;
   align-self: stretch;
+  height: 100%;
+  min-height: 0;
   z-index: 4;
   margin: 0;
   border-radius: 0;
   border-width: 0;
   background: color-mix(in srgb, var(--app-bg) 90%, var(--app-surface) 10%);
   padding: 14px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   box-shadow: none;
 }
 

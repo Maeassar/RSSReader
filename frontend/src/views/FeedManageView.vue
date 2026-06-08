@@ -3,7 +3,6 @@
     <div class="page-title feed-manage-header" :class="{ embedded }">
       <div class="feed-manage-title-group">
         <h1>订阅管理</h1>
-        <p v-if="embedded" class="feed-manage-subtitle">在当前阅读页直接管理订阅，不跳转整页</p>
       </div>
       <div class="toolbar feed-manage-toolbar">
         <el-button v-if="embedded" class="feed-manage-action" @click="emit('close')">关闭</el-button>
@@ -47,7 +46,6 @@
         >
           导出全部
         </el-button>
-        <span class="feed-selected-count">已选 {{ selectedFeeds.length }} 个</span>
       </div>
     </div>
     <section class="panel feed-manage-panel" :class="{ embedded }">
@@ -68,6 +66,9 @@
           {{ addingFeed ? '正在添加...' : '添加订阅' }}
         </el-button>
       </el-form>
+      <div class="feed-selection-status">
+        <span class="feed-selected-count">已选 {{ selectedFeeds.length }} 个</span>
+      </div>
 
       <section v-if="lastImportReport" class="result-block">
         <div class="result-block-header">
@@ -481,16 +482,11 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 .feed-manage-title-group {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .feed-manage-title-group h1 {
   margin: 0;
-}
-
-.feed-manage-subtitle {
-  margin: 0;
-  color: #7a8799;
-  font-size: 13px;
 }
 
 .page-title.embedded {
@@ -498,8 +494,11 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 }
 
 .feed-manage-toolbar {
-  align-items: center;
+  flex: 1;
+  justify-content: flex-end;
   flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
 }
 
 .feed-manage-panel {
@@ -512,6 +511,7 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 
 .feed-manage-panel.embedded {
   border-radius: 24px;
+  min-width: 0;
 }
 
 .feed-form {
@@ -532,12 +532,19 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   --el-button-text-color: color-mix(in srgb, currentColor 84%, #506483 16%);
   --el-button-hover-bg-color: color-mix(in srgb, var(--app-surface-strong) 48%, var(--theme-accent) 52%);
   --el-button-hover-border-color: color-mix(in srgb, var(--theme-accent) 44%, var(--app-border) 56%);
+  margin: 0;
 }
 
 .feed-selected-count {
   color: #7a8799;
   font-size: 13px;
   font-weight: 700;
+}
+
+.feed-selection-status {
+  display: flex;
+  justify-content: flex-start;
+  margin: -6px 0 10px;
 }
 
 .opml-file-input {
@@ -571,7 +578,8 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 
 .feed-table {
   border-radius: 18px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .feed-table :deep(.el-table) {
@@ -593,9 +601,15 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   width: 360px;
 }
 
-@media (max-width: 960px) {
-  .feed-manage-page {
-    padding: 14px;
+@media (max-width: 1180px) {
+  .feed-manage-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .feed-manage-toolbar {
+    justify-content: flex-start;
+    width: 100%;
   }
 
   .feed-form {
@@ -609,6 +623,46 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 
   .url-input {
     width: 100%;
+  }
+}
+
+@media (max-width: 960px) {
+  .feed-manage-page {
+    padding: 14px;
+  }
+
+  .feed-selection-status {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .feed-manage-page,
+  .feed-manage-panel {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .feed-manage-toolbar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    width: 100%;
+  }
+
+  .feed-manage-toolbar :deep(.el-button) {
+    width: 100%;
+    margin: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .feed-manage-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .feed-manage-panel {
+    padding-top: 14px;
+    padding-bottom: 14px;
   }
 }
 </style>

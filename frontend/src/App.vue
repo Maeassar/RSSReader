@@ -1,5 +1,5 @@
 <template>
-  <el-container class="app-shell">
+  <el-container class="app-shell" :class="{ 'reader-shell-layout': isReaderRoute }">
     <el-header class="top-nav">
       <div class="brand" style="display: flex; align-items: center; gap: 4px">
         <strong>RSSReader</strong>
@@ -70,7 +70,7 @@
         </el-tooltip>
       </div>
     </el-header>
-    <el-main class="main">
+    <el-main class="main" :class="{ 'reader-main': isReaderRoute, 'page-main': !isReaderRoute }">
       <router-view v-slot="{ Component }">
         <keep-alive include="AskView,SearchView">
           <component :is="Component" />
@@ -101,16 +101,19 @@ import {
   Setting,
 } from "@element-plus/icons-vue";
 import { onMounted, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { rssApi } from "./api/client";
 import { usePreferencesStore } from "./stores/preferences";
 import SettingsView from "./views/SettingsView.vue";
 
 const router = useRouter();
+const route = useRoute();
 const preferences = usePreferencesStore();
 const settingsDrawerOpen = ref(false);
 let timedSyncTimer: number | undefined;
 let backgroundSyncRunning = false;
+const isReaderRoute = computed(() => route.path === "/");
 
 onMounted(() => {
   preferences.applyPreferences();
