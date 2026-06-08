@@ -72,18 +72,24 @@
       <section v-if="lastImportReport" class="result-block">
         <div class="result-block-header">
           <h2>OPML 导入结果</h2>
-          <span>文件 {{ lastImportReport.files }} 个，新增 {{ lastImportReport.imported }} 个，跳过 {{ lastImportReport.skipped }} 个，失败 {{ lastImportReport.failed }} 个</span>
+          <span>
+            文件 {{ lastImportReport.files }} 个，新增并同步 {{ lastImportReport.imported }} 个，已添加但同步失败
+            {{ lastImportReport.partial }} 个，跳过 {{ lastImportReport.skipped }} 个，失败 {{ lastImportReport.failed }} 个
+          </span>
         </div>
         <el-table :data="lastImportReport.results" size="small" max-height="240" table-layout="fixed">
           <el-table-column prop="source_file" label="文件" min-width="150" show-overflow-tooltip />
           <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
           <el-table-column prop="url" label="URL" min-width="260" show-overflow-tooltip />
-          <el-table-column label="状态" width="92">
+          <el-table-column label="状态" width="150">
             <template #default="{ row }">
               <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="message" label="原因" min-width="260" show-overflow-tooltip />
+          <el-table-column label="建议" min-width="260" show-overflow-tooltip>
+            <template #default="{ row }">{{ syncSuggestion(row.message) }}</template>
+          </el-table-column>
         </el-table>
       </section>
 
@@ -235,12 +241,33 @@ async function addFeed() {
   if (!url.value) return
   addingFeed.value = true
   try {
-    await rssApi.createFeed({ title: title.value, url: url.value })
+    const result = await rssApi.createFeed({ title: title.value, url: url.value })
     title.value = ''
     url.value = ''
     await loadFeeds()
     emit('changed')
-    ElMessage.success('订阅已添加')
+    if (result.status === 'partial') {
+      lastSyncReport.value = {
+        total: 1,
+        success: 0,
+        failed: 1,
+        skipped: 0,
+        results: [
+          {
+            feed_id: result.feed.id,
+            url: result.feed.url,
+            title: result.feed.title,
+            status: 'failed',
+            message: result.message,
+            feed: result.feed
+          }
+        ]
+      }
+      ElMessage.warning(`订阅已添加，但首次同步失败：${result.message}`)
+      return
+    }
+    lastSyncReport.value = null
+    ElMessage.success('订阅已添加并同步')
   } catch (error) {
     ElMessage.error(createFeedErrorMessage(error))
   } finally {
@@ -387,20 +414,23 @@ function showImportReportMessage(report: OPMLImportReport) {
     ElMessage.warning('OPML 文件中没有可导入的订阅源')
     return
   }
-  if (report.failed > 0 && report.imported === 0) {
+  if (report.failed > 0 && report.imported === 0 && report.partial === 0) {
     ElMessage.error(`OPML 导入失败 ${report.failed} 个，跳过 ${report.skipped} 个`)
     return
   }
-  if (report.failed > 0 || report.skipped > 0) {
-    ElMessage.warning(`OPML 导入完成：新增 ${report.imported} 个，跳过 ${report.skipped} 个，失败 ${report.failed} 个`)
+  if (report.failed > 0 || report.partial > 0 || report.skipped > 0) {
+    ElMessage.warning(
+      `OPML 导入完成：新增并同步 ${report.imported} 个，已添加但同步失败 ${report.partial} 个，跳过 ${report.skipped} 个，失败 ${report.failed} 个`
+    )
     return
   }
-  ElMessage.success(`OPML 导入完成：新增 ${report.imported} 个订阅`)
+  ElMessage.success(`OPML 导入完成：新增并同步 ${report.imported} 个订阅`)
 }
 
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     imported: '新增',
+    partial: '已添加，同步失败',
     skipped: '跳过',
     failed: '失败',
     success: '成功',

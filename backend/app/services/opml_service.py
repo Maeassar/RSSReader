@@ -6,7 +6,7 @@ from xml.etree import ElementTree as ET
 from pydantic import ValidationError
 
 from app.repositories import repository
-from app.schemas import FeedCreate
+from app.schemas import FeedCreate, FeedUpdate
 
 
 def parse_opml_feeds(text: str) -> list[dict[str, str | None]]:
@@ -121,13 +121,33 @@ async def import_opml(files):
 
             existing_feeds[url] = feed
             imported_urls.add(url)
+            try:
+                synced_feed = repository.sync_feed(feed["id"])
+            except Exception as exc:
+                message = str(exc)
+                feed_after_failure = repository.get_feed(feed["id"]) if hasattr(repository, "get_feed") else feed
+                results.append(
+                    {
+                        "url": url,
+                        "title": title or feed_after_failure["title"],
+                        "status": "partial",
+                        "message": message,
+                        "feed": feed_after_failure,
+                        "source_file": source_file,
+                    }
+                )
+                continue
+
+            if title:
+                synced_feed = repository.update_feed(feed["id"], FeedUpdate(title=title))
+            existing_feeds[url] = synced_feed
             results.append(
                 {
                     "url": url,
-                    "title": title or feed["title"],
+                    "title": title or synced_feed["title"],
                     "status": "imported",
-                    "message": "Feed imported. Run sync to fetch articles.",
-                    "feed": feed,
+                    "message": "Feed imported and synced successfully.",
+                    "feed": synced_feed,
                     "source_file": source_file,
                 }
             )
@@ -136,6 +156,7 @@ async def import_opml(files):
         "files": len(upload_files),
         "total": len(results),
         "imported": sum(1 for item in results if item["status"] == "imported"),
+        "partial": sum(1 for item in results if item["status"] == "partial"),
         "skipped": sum(1 for item in results if item["status"] == "skipped"),
         "failed": sum(1 for item in results if item["status"] == "failed"),
         "results": results,

@@ -73,7 +73,7 @@ def clean_html(raw_html: str | None) -> dict[str, str | None]:
 
     soup = BeautifulSoup(raw_html, "html.parser")
     root = _pick_content_root(soup)
-    _replace_embedded_media(root)
+    _replace_embedded_media(root, soup)
 
     for item in root.find_all(DISALLOWED_TAGS):
         item.decompose()
@@ -104,15 +104,15 @@ def clean_html(raw_html: str | None) -> dict[str, str | None]:
     }
 
 
-def _replace_embedded_media(root: Tag | BeautifulSoup) -> None:
+def _replace_embedded_media(root: Tag | BeautifulSoup, soup: BeautifulSoup) -> None:
     for node in root.find_all(["iframe", "embed", "object", "video"]):
         media_url = _embedded_media_url(node)
         if not media_url:
             node.decompose()
             continue
 
-        replacement = root.new_tag("p")
-        link = root.new_tag("a", href=media_url)
+        replacement = soup.new_tag("p")
+        link = soup.new_tag("a", href=media_url)
         link.string = _embedded_media_label(node)
         replacement.append(link)
         node.replace_with(replacement)

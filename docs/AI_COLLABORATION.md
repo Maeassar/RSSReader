@@ -211,3 +211,12 @@
 - 新增或更新后端回归测试，覆盖多 OPML 文件导入、选中导出、同步不中断、RSS 抓取重试、重复条目去重和已存在订阅先查重。
 - 当日验证：执行 `..\.venv\Scripts\python.exe -m unittest tests.test_feed_parser tests.test_opml_sync` 通过，执行 `node_modules\.bin\vue-tsc.cmd --noEmit` 通过；临时数据库完整添加 `https://openai.com/news/rss.xml` 用时约 9.2 秒。
 - 当前限制：同步仍是同步请求流程，没有新增持久化后台任务队列；若源站本身拒绝访问或网络环境不可达，仍需要用户查看同步日志并按建议处理。
+
+## 2026-06-08
+
+- 使用 AI Coding Agent 根据反馈恢复“添加订阅后立即首次同步”的体验，同时保留失败原因展示。
+- 后端 `POST /api/feeds` 返回 `FeedCreateResult`，区分 `success` 和 `partial`：首次同步失败时订阅源仍保留，响应和同步日志会包含失败原因。
+- OPML 导入新增 `partial` 结果和计数，表示“订阅源已添加但首次同步失败”，不会阻断其它订阅继续导入和同步。
+- 前端订阅管理页适配新的添加结果，手动添加 partial 会显示 warning 和同步结果表；OPML 结果表也会显示 partial 状态、失败原因和建议。
+- 同步更新 `update_docs/Week14_handingna.md`，说明手动添加、OPML 导入、partial 语义和重试方式。
+- 当前限制：首次同步仍是同步请求流程，源站超时或拒绝访问时需要用户后续手动重试同步。

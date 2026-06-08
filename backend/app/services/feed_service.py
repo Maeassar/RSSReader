@@ -1,4 +1,5 @@
 from app.repositories import repository
+from app.schemas import FeedUpdate
 
 
 def list_feeds():
@@ -10,7 +11,23 @@ def get_feed(feed_id):
 
 
 def create_feed(payload):
-    return repository.create_feed(payload)
+    feed = repository.create_feed_metadata(payload)
+    try:
+        synced_feed = repository.sync_feed(feed["id"])
+    except Exception as exc:
+        return {
+            "status": "partial",
+            "message": str(exc),
+            "feed": repository.get_feed(feed["id"]),
+        }
+    if payload.title:
+        synced_feed = repository.update_feed(feed["id"], FeedUpdate(title=payload.title))
+
+    return {
+        "status": "success",
+        "message": "Feed added and synced successfully.",
+        "feed": synced_feed,
+    }
 
 
 def update_feed(feed_id, payload):

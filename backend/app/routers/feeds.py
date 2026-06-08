@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas import ArticleRead, FeedCreate, FeedRead, FeedSyncReport, FeedUpdate, OperationResult
+from app.schemas import ArticleRead, FeedCreate, FeedCreateResult, FeedRead, FeedSyncReport, FeedUpdate, OperationResult
 from app.services import article_service
 from app.services import feed_service
 
@@ -12,7 +12,7 @@ def list_feeds():
     return feed_service.list_feeds()
 
 
-@router.post("", response_model=FeedRead)
+@router.post("", response_model=FeedCreateResult)
 def create_feed(payload: FeedCreate):
     try:
         return feed_service.create_feed(payload)
