@@ -30,6 +30,12 @@ class FeedRead(BaseModel):
     created_at: datetime
 
 
+class FeedCreateResult(BaseModel):
+    status: Literal["success", "partial"]
+    message: str
+    feed: FeedRead
+
+
 class FeedSyncItem(BaseModel):
     feed_id: int | None = None
     url: str | None = None
@@ -50,7 +56,7 @@ class FeedSyncReport(BaseModel):
 class OPMLImportItem(BaseModel):
     url: str | None = None
     title: str | None = None
-    status: Literal["imported", "skipped", "failed"]
+    status: Literal["imported", "partial", "skipped", "failed"]
     message: str
     feed: FeedRead | None = None
     source_file: str | None = None
@@ -60,6 +66,7 @@ class OPMLImportReport(BaseModel):
     files: int = 0
     total: int
     imported: int
+    partial: int = 0
     skipped: int
     failed: int
     results: list[OPMLImportItem] = Field(default_factory=list)

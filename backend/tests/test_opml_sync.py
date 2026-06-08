@@ -33,13 +33,20 @@ class FakeOPMLRepository:
         self.logs = []
         self.create_feed_calls = 0
         self.create_feed_metadata_calls = 0
+        self.sync_feed_calls = 0
 
     def list_feeds(self):
         return list(self.feeds)
 
+    def get_feed(self, feed_id):
+        for feed in self.feeds:
+            if feed["id"] == feed_id:
+                return feed
+        raise ValueError(f"Feed {feed_id} not found")
+
     def create_feed(self, payload):
         self.create_feed_calls += 1
-        raise AssertionError("OPML import should not sync feeds during metadata import")
+        raise AssertionError("OPML import should create metadata before syncing feeds")
 
     def create_feed_metadata(self, payload):
         self.create_feed_metadata_calls += 1
@@ -57,6 +64,24 @@ class FakeOPMLRepository:
         }
         self.feeds.append(feed)
         self.log_feed_event(feed["id"], url, "pending", "Imported feed metadata from OPML. Run sync to fetch articles.")
+        return feed
+
+    def sync_feed(self, feed_id):
+        self.sync_feed_calls += 1
+        feed = self.get_feed(feed_id)
+        if feed["url"] == "https://example.com/sync-fails.xml":
+            self.log_feed_event(feed_id, feed["url"], "failed", "network error")
+            raise ValueError("network error")
+        feed["title"] = "Parsed title"
+        feed["last_sync_at"] = datetime.now(timezone.utc)
+        self.log_feed_event(feed_id, feed["url"], "success", "Synced feed and saved 1 new entries.")
+        return feed
+
+    def update_feed(self, feed_id, payload):
+        feed = self.get_feed(feed_id)
+        for key, value in payload.model_dump(exclude_unset=True).items():
+            if value is not None:
+                feed[key] = str(value) if key == "url" else value
         return feed
 
     def log_feed_event(self, feed_id, url, status, message):
@@ -93,6 +118,51 @@ class FakeSyncRepository:
         }
 
 
+class FakeCreateRepository:
+    def __init__(self, sync_error: str | None = None) -> None:
+        self.sync_error = sync_error
+        self.feeds = []
+        self.articles = []
+        self.logs = []
+
+    def create_feed_metadata(self, payload):
+        feed = {
+            "id": len(self.feeds) + 1,
+            "title": payload.title or str(payload.url),
+            "url": str(payload.url),
+            "site_url": None,
+            "description": None,
+            "last_sync_at": None,
+            "created_at": datetime.now(timezone.utc),
+        }
+        self.feeds.append(feed)
+        return feed
+
+    def get_feed(self, feed_id):
+        for feed in self.feeds:
+            if feed["id"] == feed_id:
+                return feed
+        raise ValueError(f"Feed {feed_id} not found")
+
+    def sync_feed(self, feed_id):
+        feed = self.get_feed(feed_id)
+        if self.sync_error:
+            self.logs.append({"feed_id": feed_id, "status": "failed", "message": self.sync_error})
+            raise ValueError(self.sync_error)
+        feed["title"] = "Parsed title"
+        feed["last_sync_at"] = datetime.now(timezone.utc)
+        self.articles.append({"feed_id": feed_id, "title": "Synced article"})
+        self.logs.append({"feed_id": feed_id, "status": "success", "message": "Synced feed and saved 1 new entries."})
+        return feed
+
+    def update_feed(self, feed_id, payload):
+        feed = self.get_feed(feed_id)
+        for key, value in payload.model_dump(exclude_unset=True).items():
+            if value is not None:
+                feed[key] = str(value) if key == "url" else value
+        return feed
+
+
 class OPMLServiceTest(unittest.TestCase):
     def test_parse_nested_opml_deduplicates_feed_urls(self):
         items = opml_service.parse_opml_feeds(
@@ -126,6 +196,7 @@ class OPMLServiceTest(unittest.TestCase):
                             <outline text="New Feed" xmlUrl="https://example.com/new.xml" />
                             <outline text="Invalid" xmlUrl="not-a-url" />
                             <outline text="Failing" xmlUrl="https://example.com/failing.xml" />
+                            <outline text="Sync Fails" xmlUrl="https://example.com/sync-fails.xml" />
                           </body>
                         </opml>
                         """
@@ -137,15 +208,20 @@ class OPMLServiceTest(unittest.TestCase):
             opml_service.repository = old_repository
 
         self.assertEqual(report["files"], 1)
-        self.assertEqual(report["total"], 4)
+        self.assertEqual(report["total"], 5)
         self.assertEqual(report["imported"], 1)
+        self.assertEqual(report["partial"], 1)
         self.assertEqual(report["skipped"], 1)
         self.assertEqual(report["failed"], 2)
-        self.assertEqual([item["status"] for item in report["results"]], ["skipped", "imported", "failed", "failed"])
+        self.assertEqual([item["status"] for item in report["results"]], ["skipped", "imported", "failed", "failed", "partial"])
         self.assertEqual(fake_repository.create_feed_calls, 0)
-        self.assertEqual(fake_repository.create_feed_metadata_calls, 2)
-        self.assertEqual(len([item for item in fake_repository.logs if item["status"] == "failed"]), 2)
-        self.assertIsNone(report["results"][1]["feed"]["last_sync_at"])
+        self.assertEqual(fake_repository.create_feed_metadata_calls, 3)
+        self.assertEqual(fake_repository.sync_feed_calls, 2)
+        self.assertEqual(len([item for item in fake_repository.logs if item["status"] == "failed"]), 3)
+        self.assertIsNotNone(report["results"][1]["feed"]["last_sync_at"])
+        self.assertEqual(report["results"][1]["feed"]["title"], "New Feed")
+        self.assertIsNone(report["results"][4]["feed"]["last_sync_at"])
+        self.assertEqual(report["results"][4]["message"], "network error")
 
     def test_import_multiple_opml_files_merges_results_and_reports_file_errors(self):
         old_repository = opml_service.repository
@@ -186,6 +262,7 @@ class OPMLServiceTest(unittest.TestCase):
         self.assertEqual(report["files"], 3)
         self.assertEqual(report["total"], 4)
         self.assertEqual(report["imported"], 2)
+        self.assertEqual(report["partial"], 0)
         self.assertEqual(report["skipped"], 1)
         self.assertEqual(report["failed"], 1)
         self.assertEqual([item["source_file"] for item in report["results"]], ["one.opml", "two.opml", "two.opml", "broken.opml"])
@@ -243,6 +320,36 @@ class OPMLServiceTest(unittest.TestCase):
 
 
 class SyncAllServiceTest(unittest.TestCase):
+    def test_create_feed_syncs_new_feed_and_reports_success(self):
+        old_repository = feed_service.repository
+        fake_repository = FakeCreateRepository()
+        feed_service.repository = fake_repository
+        try:
+            result = feed_service.create_feed(type("Payload", (), {"url": "https://example.com/feed.xml", "title": "Example"})())
+        finally:
+            feed_service.repository = old_repository
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["message"], "Feed added and synced successfully.")
+        self.assertEqual(result["feed"]["title"], "Example")
+        self.assertIsNotNone(result["feed"]["last_sync_at"])
+        self.assertEqual(fake_repository.articles, [{"feed_id": 1, "title": "Synced article"}])
+
+    def test_create_feed_keeps_feed_and_reports_partial_when_initial_sync_fails(self):
+        old_repository = feed_service.repository
+        fake_repository = FakeCreateRepository(sync_error="network error")
+        feed_service.repository = fake_repository
+        try:
+            result = feed_service.create_feed(type("Payload", (), {"url": "https://example.com/feed.xml", "title": "Example"})())
+        finally:
+            feed_service.repository = old_repository
+
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["message"], "network error")
+        self.assertEqual(len(fake_repository.feeds), 1)
+        self.assertIsNone(result["feed"]["last_sync_at"])
+        self.assertEqual(fake_repository.logs[0]["status"], "failed")
+
     def test_sync_all_keeps_syncing_when_one_feed_fails(self):
         old_repository = feed_service.repository
         feed_service.repository = FakeSyncRepository()

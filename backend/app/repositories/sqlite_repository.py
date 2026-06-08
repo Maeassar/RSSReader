@@ -57,7 +57,7 @@ class SQLiteRepository:
             feed_id = cursor.lastrowid
             conn.execute(
                 "INSERT INTO feed_fetch_logs (feed_id, url, status, message, fetched_at) VALUES (?, ?, ?, ?, ?)",
-                (feed_id, url, "pending", "Imported feed metadata from OPML. Run sync to fetch articles.", timestamp),
+                (feed_id, url, "pending", "Created feed metadata. Run sync to fetch articles.", timestamp),
             )
             row = conn.execute("SELECT * FROM feeds WHERE id = ?", (feed_id,)).fetchone()
         return self._feed(row)

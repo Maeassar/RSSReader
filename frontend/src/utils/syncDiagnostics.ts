@@ -39,7 +39,7 @@ export function syncSuggestion(message?: string) {
 export function statusTagType(status?: string) {
   if (status === 'success' || status === 'imported') return 'success'
   if (status === 'failed') return 'danger'
-  if (status === 'pending' || status === 'skipped') return 'warning'
+  if (status === 'pending' || status === 'partial' || status === 'skipped') return 'warning'
   return 'info'
 }
 
