@@ -619,6 +619,29 @@ body.theme-dark .el-popper.is-light .el-popper__arrow::before {
   border-color: color-mix(in srgb, var(--app-border) 82%, transparent 18%);
 }
 
+body.theme-dark .el-table,
+body.theme-dark .el-table tr,
+body.theme-dark .el-table th.el-table__cell,
+body.theme-dark .el-table td.el-table__cell {
+  background-color: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
+  color: #e8eaed !important;
+}
+
+body.theme-dark .el-table th.el-table__cell {
+  background-color: color-mix(in srgb, var(--app-surface) 70%, var(--app-bg) 30%) !important;
+  color: #9aa4b2 !important;
+}
+
+body.theme-dark .el-table__body tr:hover td.el-table__cell {
+  background-color: color-mix(in srgb, var(--app-surface) 75%, var(--app-border) 25%) !important;
+}
+
+body.theme-dark .el-table__inner-wrapper::before,
+body.theme-dark .el-table__border-left-patch {
+  background-color: var(--app-border) !important;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(240px, 1fr));

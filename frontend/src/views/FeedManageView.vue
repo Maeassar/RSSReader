@@ -583,14 +583,32 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 }
 
 .feed-table :deep(.el-table) {
-  --el-table-bg-color: color-mix(in srgb, var(--app-surface) 96%, var(--app-bg) 4%);
-  --el-table-tr-bg-color: color-mix(in srgb, var(--app-surface) 96%, var(--app-bg) 4%);
-  --el-table-header-bg-color: color-mix(in srgb, var(--app-surface-strong) 82%, var(--app-bg) 18%);
-  --el-table-border-color: color-mix(in srgb, var(--app-border) 74%, transparent 26%);
+  --el-table-bg-color: var(--app-surface);
+  --el-table-tr-bg-color: var(--app-surface);
+  --el-table-row-hover-bg-color: color-mix(in srgb, var(--app-surface) 80%, var(--app-border) 20%);
+  --el-table-header-bg-color: color-mix(in srgb, var(--app-surface) 70%, var(--app-bg) 30%);
+  --el-table-border-color: var(--app-border);
+  --el-table-text-color: inherit;
+  --el-table-header-text-color: inherit;
+  background-color: var(--app-surface);
+  color: inherit;
 }
 
 .feed-table :deep(.el-table th.el-table__cell) {
   font-weight: 800;
+  background-color: color-mix(in srgb, var(--app-surface) 70%, var(--app-bg) 30%);
+  color: inherit;
+  border-bottom-color: var(--app-border);
+}
+
+.feed-table :deep(.el-table td.el-table__cell) {
+  background-color: var(--app-surface);
+  color: inherit;
+  border-bottom-color: var(--app-border);
+}
+
+.feed-table :deep(.el-table__body tr:hover td.el-table__cell) {
+  background-color: color-mix(in srgb, var(--app-surface) 80%, var(--app-border) 20%);
 }
 
 .feed-table :deep(.el-table__cell) {
@@ -664,5 +682,11 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
     padding-top: 14px;
     padding-bottom: 14px;
   }
+}
+</style>
+
+<style>
+body.theme-dark .result-block-header {
+  color: #9aa4b2;
 }
 </style>

@@ -162,8 +162,9 @@ function formatDate(dateStr: string) {
 
 .result-card {
   padding: 16px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
+  background: var(--app-surface);
   cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -236,5 +237,24 @@ function formatDate(dateStr: string) {
 
 .result-card:hover .open-hint {
   opacity: 1;
+}
+</style>
+
+<style>
+body.theme-dark .result-title {
+  color: #e8eaed;
+}
+
+body.theme-dark .result-snippet,
+body.theme-dark .result-footer .open-hint,
+body.theme-dark .pub-date,
+body.theme-dark .search-meta,
+body.theme-dark .no-results {
+  color: #9aa4b2;
+}
+
+body.theme-dark .result-card :deep(mark) {
+  background-color: #4a4200;
+  color: #ffe066;
 }
 </style>
