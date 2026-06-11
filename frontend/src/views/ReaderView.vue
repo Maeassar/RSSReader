@@ -297,11 +297,41 @@
         <div class="article-reading-surface">
           <div ref="articleBodyRef" class="article-body" v-html="renderedArticleHtml"></div>
         </div>
+        <div v-if="summaryRunning || summaryStepItems.length" class="summary-progress-card">
+          <div class="summary-progress-header">
+            <div>
+              <strong>摘要生成步骤</strong>
+              <span class="summary-progress-status">{{ summaryRunning ? '运行中' : '已完成' }}</span>
+            </div>
+            <el-button v-if="!summaryRunning" size="small" text @click="summaryStepsExpanded = !summaryStepsExpanded">
+              {{ summaryStepsExpanded ? '收起步骤' : '查看生成步骤' }}
+            </el-button>
+          </div>
+          <div v-if="summaryRunning || summaryStepsExpanded" class="summary-step-list">
+            <div
+              v-for="(step, index) in summaryStepItems"
+              :key="`${step.title}-${index}`"
+              class="summary-step-item"
+              :class="{ active: summaryRunning && index === summaryActiveStep, done: !summaryRunning || index < summaryActiveStep }"
+            >
+              <span class="summary-step-dot"></span>
+              <div>
+                <strong>{{ step.title }}</strong>
+                <p>{{ step.detail }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
         <el-alert v-if="aiResult" type="success" show-icon :closable="false" class="summary-result-alert">
           <template #title>
             <div class="summary-result-title">
               <span>AI 摘要</span>
-              <span v-if="summaryUsage" class="summary-usage">{{ summaryUsage }}</span>
+              <div class="summary-result-actions">
+                <span v-if="summaryUsage" class="summary-usage">{{ summaryUsage }}</span>
+                <el-button v-if="summaryStepItems.length" size="small" text @click="summaryStepsExpanded = !summaryStepsExpanded">
+                  {{ summaryStepsExpanded ? '收起步骤' : '查看生成步骤' }}
+                </el-button>
+              </div>
             </div>
           </template>
           <div class="summary-result-body">{{ aiResult }}</div>
@@ -359,6 +389,9 @@ const note = ref('')
 const aiResult = ref('')
 const summaryUsage = ref('')
 const summaryRunning = ref(false)
+const summaryActiveStep = ref(0)
+const summaryStepsExpanded = ref(false)
+const summaryStepTimer = ref<number | null>(null)
 const summaryProviders = ref<LLMProvider[]>([])
 const summaryProviderId = ref<number | null>(null)
 const summaryMode = ref<'brief' | 'structured' | 'deep'>('structured')
@@ -373,6 +406,7 @@ const summaryLanguageOptions = [
   { label: '中文', value: 'zh' },
   { label: 'EN', value: 'en' }
 ]
+const summaryStepItems = ref<Array<{ title: string; detail: string }>>([])
 const articleBodyRef = ref<HTMLElement | null>(null)
 const exportingMarkdown = ref(false)
 const feedManagerOpen = ref(false)
@@ -456,6 +490,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('rssreader:background-sync', handleBackgroundSync)
   window.removeEventListener('resize', handleWindowResize)
+  stopSummaryStepTimer()
 })
 
 watch(
@@ -855,11 +890,16 @@ function renderMarkdownInline(value: string, options: { allowLinks?: boolean } =
 function clearSummaryResult() {
   aiResult.value = ''
   summaryUsage.value = ''
+  summaryStepItems.value = []
+  summaryActiveStep.value = 0
+  summaryStepsExpanded.value = false
+  stopSummaryStepTimer()
 }
 
 async function runSummary() {
   if (!store.selectedArticle) return
   summaryRunning.value = true
+  startSummarySteps()
   try {
     const data = await rssApi.summary(store.selectedArticle.id, {
       provider_id: summaryProviderId.value,
@@ -870,12 +910,94 @@ async function runSummary() {
     })
     aiResult.value = data.result
     summaryUsage.value = `${data.input_tokens} 输入 / ${data.output_tokens} 输出 tokens`
+    finishSummarySteps(data.prompt)
     ElMessage.success('摘要已生成')
   } catch (error) {
+    failSummarySteps()
     ElMessage.error(getErrorMessage(error, '摘要生成失败，请检查 Provider 配置'))
   } finally {
     summaryRunning.value = false
   }
+}
+
+function startSummarySteps() {
+  stopSummaryStepTimer()
+  summaryStepsExpanded.value = true
+  summaryActiveStep.value = 0
+  summaryStepItems.value = [
+    { title: '读取文章上下文', detail: '整理标题、订阅源、正文和摘要配置。' },
+    { title: '检查模型与 Provider', detail: '使用当前选择的本地或远程模型服务。' },
+    { title: '评估上下文预算', detail: '判断是否需要长文分块和多轮压缩。' },
+    { title: '提取事实笔记', detail: '保留主旨、事实、数字、风险和不确定性。' },
+    { title: '合成最终摘要', detail: '去重、自检并生成面向阅读者的摘要。' }
+  ]
+  summaryStepTimer.value = window.setInterval(() => {
+    if (summaryActiveStep.value < summaryStepItems.value.length - 1) {
+      summaryActiveStep.value += 1
+    }
+  }, 1800)
+}
+
+function finishSummarySteps(prompt: string) {
+  stopSummaryStepTimer()
+  summaryStepItems.value = extractSummaryTraceSteps(prompt)
+  summaryActiveStep.value = summaryStepItems.value.length
+  summaryStepsExpanded.value = false
+}
+
+function failSummarySteps() {
+  stopSummaryStepTimer()
+  summaryStepItems.value = [
+    ...summaryStepItems.value,
+    { title: '生成失败', detail: '请检查 Provider 配置、Ollama 服务或网络连接后重试。' }
+  ]
+  summaryStepsExpanded.value = true
+}
+
+function stopSummaryStepTimer() {
+  if (summaryStepTimer.value !== null) {
+    window.clearInterval(summaryStepTimer.value)
+    summaryStepTimer.value = null
+  }
+}
+
+function extractSummaryTraceSteps(prompt: string) {
+  if (!prompt.includes('多轮上下文摘要流程')) {
+    return [
+      { title: '读取文章上下文', detail: '已整理文章标题、订阅源和正文内容。' },
+      { title: '单轮摘要', detail: '文章未超过当前上下文预算，直接调用模型生成摘要。' },
+      { title: '自检并完成', detail: '已清理模型输出并记录本次 token 用量。' }
+    ]
+  }
+
+  const sourceTokens = prompt.match(/source_tokens≈(\d+)/)?.[1]
+  const chunks = prompt.match(/chunks=(\d+)/)?.[1]
+  const compactRounds = new Set([...prompt.matchAll(/\[compact r(\d+)/g)].map((match) => match[1]))
+  const steps = [
+    {
+      title: '评估长文上下文',
+      detail: `正文约 ${sourceTokens ?? '若干'} tokens，超过单轮预算，进入多轮摘要。`
+    },
+    {
+      title: '切分文章片段',
+      detail: `已切成 ${chunks ?? prompt.match(/\[chunk /g)?.length ?? '多个'} 个 chunk，逐段提取事实笔记。`
+    },
+    {
+      title: '提取事实笔记',
+      detail: '每个片段单独保留主旨、事实、数字、风险、争议和不确定性。'
+    }
+  ]
+  if (compactRounds.size > 0) {
+    steps.push({
+      title: '压缩中间笔记',
+      detail: `中间笔记仍偏长，已执行 ${compactRounds.size} 轮 compaction。`
+    })
+  }
+  steps.push({
+    title: '合成最终摘要',
+    detail: '已完成 final merge，去重、自检并生成最终摘要。'
+  })
+  return steps
 }
 
 async function runTranslate() {
@@ -1181,6 +1303,70 @@ function exportNote() {
 
 .summary-result-alert {
   margin: 18px 0 0;
+}
+
+.summary-progress-card {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 24%, var(--app-border) 76%);
+  background: color-mix(in srgb, var(--theme-accent) 8%, var(--app-surface) 92%);
+}
+
+.summary-progress-header,
+.summary-result-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-progress-status {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.summary-step-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.summary-step-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--el-text-color-secondary);
+}
+
+.summary-step-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--theme-accent) 45%, var(--app-border) 55%);
+  background: var(--app-surface);
+}
+
+.summary-step-item.done,
+.summary-step-item.active {
+  color: var(--app-text);
+}
+
+.summary-step-item.done .summary-step-dot {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+}
+
+.summary-step-item.active .summary-step-dot {
+  background: var(--theme-accent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--theme-accent) 16%, transparent 84%);
+}
+
+.summary-step-item p {
+  margin: 2px 0 0;
+  line-height: 1.5;
 }
 
 .summary-popover-body {

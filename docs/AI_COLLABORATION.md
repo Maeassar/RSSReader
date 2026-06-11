@@ -231,6 +231,7 @@
 - 排查到 Homebrew formula 版 `ollama 0.30.7` 缺少 `llama-server`，真实推理时报 `llama-server binary not found`；改用 `brew install --cask ollama-app` 后通过 `/Applications/Ollama.app/Contents/Resources/ollama serve` 启动完整运行时。
 - 当日验证：后端 `python3 -m unittest discover -s backend/tests` 通过，前端 `./node_modules/.bin/vue-tsc --noEmit --pretty false` 通过，真实 Ollama/Qwen3 API 摘要和 `/api/stats/llm` 用量聚合通过。
 - 当前限制：vLLM 模板和 OpenAI-compatible 调用链路已完成，但本次真实本地推理使用的是 Ollama `qwen3:8b`；若需要演示 vLLM 权重加载，还需要在具备足够 GPU/内存的机器上单独启动 vLLM。
+- 根据人工验收反馈继续优化摘要交互：provider 不再承担“开始生成”的动作，摘要面板新增明确的 `生成摘要` 按钮；摘要运行时展示动态步骤，完成后自动折叠，用户可重新展开查看步骤；切换文章时清空上一篇摘要，避免结果串页。
 
 ## 2026-06-08（布局适配修正）
 
