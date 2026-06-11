@@ -25,6 +25,7 @@ def initialize_database() -> None:
     with get_connection() as conn:
         conn.executescript(schema)
         _migrate_entries_table(conn)
+        _migrate_ai_tables(conn)
         _migrate_fts_table(conn)
     # Vector table requires the sqlite-vec extension, initialized separately
     try:
@@ -51,6 +52,30 @@ def _migrate_entries_table(conn: sqlite3.Connection) -> None:
             conn.execute(statement)
 
 
+def _migrate_ai_tables(conn: sqlite3.Connection) -> None:
+    ai_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ai_results)").fetchall()}
+    ai_migrations = {
+        "provider": "ALTER TABLE ai_results ADD COLUMN provider TEXT",
+        "model": "ALTER TABLE ai_results ADD COLUMN model TEXT",
+    }
+    for column, statement in ai_migrations.items():
+        if column not in ai_columns:
+            conn.execute(statement)
+
+    provider_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(llm_providers)").fetchall()
+    }
+    provider_migrations = {
+        "provider_type": "ALTER TABLE llm_providers ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'openai_compatible'",
+        "is_default": "ALTER TABLE llm_providers ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0",
+        "created_at": "ALTER TABLE llm_providers ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
+        "updated_at": "ALTER TABLE llm_providers ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
+    }
+    for column, statement in provider_migrations.items():
+        if column not in provider_columns:
+            conn.execute(statement)
+
+
 def _migrate_fts_table(conn: sqlite3.Connection) -> None:
     # Backfill FTS index for any existing rows that were inserted before the triggers existed.
     # entries_fts uses content= so we check if it's empty while entries has rows.
@@ -62,4 +87,3 @@ def _migrate_fts_table(conn: sqlite3.Connection) -> None:
                 "INSERT INTO entries_fts(rowid, title, summary, cleaned_markdown) "
                 "SELECT id, title, summary, cleaned_markdown FROM entries"
             )
-

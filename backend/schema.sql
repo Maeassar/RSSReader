@@ -68,9 +68,24 @@ CREATE TABLE IF NOT EXISTS ai_results (
     FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS llm_providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL DEFAULT 'openai_compatible',
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_entries_feed_id ON entries(feed_id);
 CREATE INDEX IF NOT EXISTS idx_entries_published_at ON entries(published_at);
 CREATE INDEX IF NOT EXISTS idx_logs_feed_id ON feed_fetch_logs(feed_id);
+CREATE INDEX IF NOT EXISTS idx_ai_results_task_type ON ai_results(task_type);
+CREATE INDEX IF NOT EXISTS idx_ai_results_provider_model ON ai_results(provider, model);
 
 CREATE TABLE IF NOT EXISTS app_config (
     key TEXT PRIMARY KEY,
