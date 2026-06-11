@@ -39,7 +39,14 @@ def delete_provider(provider_id: int):
 def summarize(article_id: int, payload: SummaryRequest | None = None):
     request = payload or SummaryRequest()
     try:
-        return ai_service.summarize(article_id, provider_id=request.provider_id, refresh=request.refresh)
+        return ai_service.summarize(
+            article_id,
+            provider_id=request.provider_id,
+            refresh=request.refresh,
+            mode=request.mode,
+            language=request.language,
+            max_words=request.max_words,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SummaryAgentError as exc:

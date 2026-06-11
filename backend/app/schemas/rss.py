@@ -154,6 +154,9 @@ class LLMProviderRead(BaseModel):
 class SummaryRequest(BaseModel):
     provider_id: int | None = None
     refresh: bool = True
+    mode: Literal["brief", "structured", "deep"] = "structured"
+    language: Literal["zh", "en"] = "zh"
+    max_words: int = Field(default=450, ge=120, le=1200)
 
 
 class AIResultRead(BaseModel):

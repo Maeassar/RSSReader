@@ -205,6 +205,14 @@
             <el-button class="toolbar-icon-button" :loading="summaryRunning" :icon="MagicStick" circle aria-label="生成摘要" />
             <template #dropdown>
               <el-dropdown-menu>
+                <div class="summary-dropdown-settings" @click.stop>
+                  <span class="dropdown-inline-label">摘要模式</span>
+                  <el-segmented v-model="summaryMode" :options="summaryModeOptions" size="small" />
+                  <span class="dropdown-inline-label">语言</span>
+                  <el-segmented v-model="summaryLanguage" :options="summaryLanguageOptions" size="small" />
+                  <span class="dropdown-inline-label">长度</span>
+                  <el-input-number v-model="summaryMaxWords" :min="120" :max="1200" :step="60" size="small" />
+                </div>
                 <el-dropdown-item command="default">默认 Provider</el-dropdown-item>
                 <el-dropdown-item
                   v-for="provider in summaryProviders"
@@ -349,6 +357,18 @@ const aiResult = ref('')
 const summaryUsage = ref('')
 const summaryRunning = ref(false)
 const summaryProviders = ref<LLMProvider[]>([])
+const summaryMode = ref<'brief' | 'structured' | 'deep'>('structured')
+const summaryLanguage = ref<'zh' | 'en'>('zh')
+const summaryMaxWords = ref(450)
+const summaryModeOptions = [
+  { label: '简短', value: 'brief' },
+  { label: '结构化', value: 'structured' },
+  { label: '深入', value: 'deep' }
+]
+const summaryLanguageOptions = [
+  { label: '中文', value: 'zh' },
+  { label: 'EN', value: 'en' }
+]
 const articleBodyRef = ref<HTMLElement | null>(null)
 const exportingMarkdown = ref(false)
 const feedManagerOpen = ref(false)
@@ -831,7 +851,13 @@ async function runSummary(providerId: number | null = null) {
   if (!store.selectedArticle) return
   summaryRunning.value = true
   try {
-    const data = await rssApi.summary(store.selectedArticle.id, { provider_id: providerId, refresh: true })
+    const data = await rssApi.summary(store.selectedArticle.id, {
+      provider_id: providerId,
+      refresh: true,
+      mode: summaryMode.value,
+      language: summaryLanguage.value,
+      max_words: summaryMaxWords.value
+    })
     aiResult.value = data.result
     summaryUsage.value = `${data.input_tokens} 输入 / ${data.output_tokens} 输出 tokens`
     ElMessage.success('摘要已生成')
@@ -1145,6 +1171,13 @@ function exportNote() {
 
 .summary-result-alert {
   margin: 18px 0 0;
+}
+
+.summary-dropdown-settings {
+  width: 260px;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
 }
 
 .summary-result-title {

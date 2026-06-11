@@ -249,7 +249,16 @@ export const rssApi = {
     api.get<Blob>(`/export/articles/${articleId}/markdown`, { responseType: 'blob' }).then((res) => res.data),
   exportBatchDigestMarkdown: (payload: BatchDigestExportRequest) =>
     api.post<BatchDigestExportResponse>('/export/digests/markdown', payload).then((res) => res.data),
-  summary: (articleId: number, payload?: { provider_id?: number | null; refresh?: boolean }) =>
+  summary: (
+    articleId: number,
+    payload?: {
+      provider_id?: number | null
+      refresh?: boolean
+      mode?: 'brief' | 'structured' | 'deep'
+      language?: 'zh' | 'en'
+      max_words?: number
+    }
+  ) =>
     api.post<AIResult>(`/ai/summary/${articleId}`, payload ?? {}, { timeout: 90000 }).then((res) => res.data),
   translate: (articleId: number) => api.post<AIResult>(`/ai/translate/${articleId}`).then((res) => res.data),
   suggestTags: (articleId: number) => api.post<AIResult>(`/ai/tag-suggest/${articleId}`).then((res) => res.data),

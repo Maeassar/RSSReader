@@ -1,8 +1,15 @@
 from app.repositories import repository
-from app.services.summary_agent import SummaryAgentError, summarize_with_provider
+from app.services.summary_agent import SummaryAgentError, SummaryOptions, summarize_with_provider
 
 
-def summarize(article_id: int, provider_id: int | None = None, refresh: bool = True):
+def summarize(
+    article_id: int,
+    provider_id: int | None = None,
+    refresh: bool = True,
+    mode: str = "structured",
+    language: str = "zh",
+    max_words: int = 450,
+):
     if not refresh:
         cached = repository.get_latest_ai_result(article_id, "summary")
         if cached:
@@ -18,11 +25,15 @@ def summarize(article_id: int, provider_id: int | None = None, refresh: bool = T
     except ValueError as exc:
         raise SummaryAgentError("未配置可用的 LLM Provider，请先在 AI 设置中新增并启用 Provider。") from exc
 
-    result = summarize_with_provider(article, provider)
+    result = summarize_with_provider(
+        article,
+        provider,
+        SummaryOptions(mode=mode, language=language, max_words=max_words),
+    )
     return repository.create_ai_result(
         article_id,
         "summary",
-        "RSSReader Summary Agent",
+        result.prompt,
         result.text,
         provider=provider["name"],
         model=provider["model"],
