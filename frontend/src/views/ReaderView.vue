@@ -201,9 +201,22 @@
           <el-tooltip :content="store.selectedArticle.is_starred ? '取消收藏' : '收藏'" placement="top">
             <el-button class="toolbar-icon-button" :class="{ active: store.selectedArticle.is_starred }" :icon="Star" circle @click="store.toggleStar(store.selectedArticle)" />
           </el-tooltip>
-          <el-tooltip content="生成摘要" placement="top">
-            <el-button class="toolbar-icon-button" :icon="MagicStick" circle @click="runSummary" />
-          </el-tooltip>
+          <el-dropdown trigger="click" @command="handleSummaryCommand">
+            <el-button class="toolbar-icon-button" :loading="summaryRunning" :icon="MagicStick" circle aria-label="生成摘要" />
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="default">默认 Provider</el-dropdown-item>
+                <el-dropdown-item
+                  v-for="provider in summaryProviders"
+                  :key="provider.id"
+                  :command="`provider:${provider.id}`"
+                  :disabled="!provider.enabled"
+                >
+                  {{ provider.is_default ? '✓ ' : '' }}{{ provider.name }} · {{ provider.model }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-popover placement="bottom" :width="320" trigger="click" popper-class="tag-popover">
             <template #reference>
               <el-button class="toolbar-icon-button" :icon="CollectionTag" circle aria-label="标签" title="标签" />
@@ -273,7 +286,15 @@
         <div class="article-reading-surface">
           <div ref="articleBodyRef" class="article-body" v-html="renderedArticleHtml"></div>
         </div>
-        <el-alert v-if="aiResult" :title="aiResult" type="success" show-icon :closable="false" />
+        <el-alert v-if="aiResult" type="success" show-icon :closable="false" class="summary-result-alert">
+          <template #title>
+            <div class="summary-result-title">
+              <span>AI 摘要</span>
+              <span v-if="summaryUsage" class="summary-usage">{{ summaryUsage }}</span>
+            </div>
+          </template>
+          <div class="summary-result-body">{{ aiResult }}</div>
+        </el-alert>
         <el-divider />
         <h2 class="reader-section-title">笔记</h2>
         <el-input v-model="note" type="textarea" :rows="6" placeholder="写下这篇文章的 Markdown 笔记" />
@@ -314,8 +335,8 @@ import { Check, CollectionTag, Download, Files, MagicStick, MoreFilled, Plus, Re
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { Article, FeedSyncReport } from '../api/client'
-import { rssApi } from '../api/client'
+import type { Article, FeedSyncReport, LLMProvider } from '../api/client'
+import { getErrorMessage, rssApi } from '../api/client'
 import { useReaderStore } from '../stores/reader'
 import { apiErrorMessage, showSyncReportMessage, statusTagType, syncSuggestion } from '../utils/syncDiagnostics'
 import FeedManageView from './FeedManageView.vue'
@@ -325,6 +346,9 @@ const route = useRoute()
 const router = useRouter()
 const note = ref('')
 const aiResult = ref('')
+const summaryUsage = ref('')
+const summaryRunning = ref(false)
+const summaryProviders = ref<LLMProvider[]>([])
 const articleBodyRef = ref<HTMLElement | null>(null)
 const exportingMarkdown = ref(false)
 const feedManagerOpen = ref(false)
@@ -395,6 +419,7 @@ onMounted(async () => {
   window.addEventListener('resize', handleWindowResize)
   handleWindowResize()
   await store.loadAll()
+  await loadSummaryProviders()
   const articleId = route.query.article
   if (articleId) {
     await store.selectArticle(Number(articleId))
@@ -454,6 +479,14 @@ async function loadNote() {
   if (!store.selectedArticle) return
   const data = await rssApi.note(store.selectedArticle.id)
   note.value = data.content_markdown
+}
+
+async function loadSummaryProviders() {
+  try {
+    summaryProviders.value = await rssApi.llmProviders()
+  } catch (error) {
+    console.warn('Failed to load LLM providers.', error)
+  }
 }
 
 async function decorateArticleLinks() {
@@ -789,10 +822,24 @@ function renderMarkdownInline(value: string, options: { allowLinks?: boolean } =
   return html
 }
 
-async function runSummary() {
+async function handleSummaryCommand(command: string) {
+  const providerId = command.startsWith('provider:') ? Number(command.replace('provider:', '')) : null
+  await runSummary(providerId)
+}
+
+async function runSummary(providerId: number | null = null) {
   if (!store.selectedArticle) return
-  const data = await rssApi.summary(store.selectedArticle.id)
-  aiResult.value = data.result
+  summaryRunning.value = true
+  try {
+    const data = await rssApi.summary(store.selectedArticle.id, { provider_id: providerId, refresh: true })
+    aiResult.value = data.result
+    summaryUsage.value = `${data.input_tokens} 输入 / ${data.output_tokens} 输出 tokens`
+    ElMessage.success('摘要已生成')
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '摘要生成失败，请检查 Provider 配置'))
+  } finally {
+    summaryRunning.value = false
+  }
 }
 
 async function runTranslate() {
@@ -1094,6 +1141,28 @@ function exportNote() {
   border-width: 0 1px 0 0;
   box-shadow: none;
   padding: 16px 14px 20px;
+}
+
+.summary-result-alert {
+  margin: 18px 0 0;
+}
+
+.summary-result-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-usage {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.summary-result-body {
+  white-space: pre-wrap;
+  line-height: 1.7;
 }
 
 .article-list-header {

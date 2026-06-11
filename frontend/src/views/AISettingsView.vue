@@ -5,11 +5,22 @@
     </div>
 
     <section class="panel">
-      <h2 class="section-title">通用 AI Provider</h2>
-      <el-alert title="当前阶段保留 OpenAI-compatible Provider 配置界面，后端 AI 接口返回 Mock 结果。" type="info" :closable="false" />
+      <h2 class="section-title">Summary Agent Provider</h2>
+      <el-alert title="文章摘要通过 OpenAI-compatible Chat Completions 调用，vLLM 本地模型可使用 Qwen/Qwen3-8B。" type="info" :closable="false" />
       <el-form label-width="120px" class="settings-form">
+        <el-form-item label="快速模板">
+          <el-segmented v-model="providerTemplate" :options="providerTemplates" @change="applyProviderTemplate" />
+        </el-form-item>
         <el-form-item label="Provider">
           <el-input v-model="provider.name" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="provider.provider_type" style="width: 220px">
+            <el-option label="OpenAI Compatible" value="openai_compatible" />
+            <el-option label="vLLM Local" value="vllm" />
+            <el-option label="Ollama" value="ollama" />
+            <el-option label="Custom" value="custom" />
+          </el-select>
         </el-form-item>
         <el-form-item label="Base URL">
           <el-input v-model="provider.baseUrl" />
@@ -22,11 +33,33 @@
         </el-form-item>
         <el-form-item>
           <el-switch v-model="provider.enabled" active-text="启用" />
+          <el-switch v-model="provider.isDefault" active-text="默认" style="margin-left: 18px" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="saveProvider">保存配置</el-button>
+          <el-button type="primary" :loading="savingProvider" @click="saveProvider">{{ editingProviderId ? '更新 Provider' : '新增 Provider' }}</el-button>
+          <el-button @click="resetProviderForm">新建</el-button>
         </el-form-item>
       </el-form>
+
+      <el-table :data="providers" size="small" class="provider-table">
+        <el-table-column prop="name" label="Provider" min-width="160" />
+        <el-table-column prop="provider_type" label="类型" width="150" />
+        <el-table-column prop="model" label="模型" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="base_url" label="Base URL" min-width="220" show-overflow-tooltip />
+        <el-table-column label="状态" width="140">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_default" size="small">默认</el-tag>
+            <el-tag v-if="row.enabled" size="small" type="success">启用</el-tag>
+            <el-tag v-else size="small" type="info">停用</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="editProvider(row)">编辑</el-button>
+            <el-button link type="danger" @click="removeProvider(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </section>
 
     <section class="panel rag-panel">
@@ -76,7 +109,7 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
-import { rssApi, type RagConfig, getErrorMessage } from '../api/client'
+import { rssApi, type LLMProvider, type LLMProviderType, type RagConfig, getErrorMessage } from '../api/client'
 
 const RAG_DEFAULTS = {
   siliconflow_base_url: 'e.g. https://api.siliconflow.cn/v1',
@@ -85,12 +118,21 @@ const RAG_DEFAULTS = {
   deepseek_model: 'e.g. deepseek-chat',
 }
 
+const providerTemplates = ['vLLM Qwen3-8B', 'Ollama', 'OpenAI Compatible']
+const providerTemplate = ref('vLLM Qwen3-8B')
+
+const providers = ref<LLMProvider[]>([])
+const editingProviderId = ref<number | null>(null)
+const savingProvider = ref(false)
+
 const provider = reactive({
-  name: 'OpenAI Compatible Demo',
-  baseUrl: 'https://api.example.com/v1',
+  name: 'Local vLLM Qwen3-8B',
+  provider_type: 'vllm' as LLMProviderType,
+  baseUrl: 'http://127.0.0.1:8001/v1',
   apiKey: '',
-  model: 'gpt-compatible-demo',
-  enabled: true
+  model: 'Qwen/Qwen3-8B',
+  enabled: true,
+  isDefault: true
 })
 
 const rag = reactive<RagConfig>({
@@ -107,6 +149,7 @@ const saving = ref(false)
 
 onMounted(async () => {
   try {
+    await loadProviders()
     const cfg = await rssApi.getRagConfig()
     Object.assign(rag, cfg)
   } catch (e: unknown) {
@@ -114,8 +157,98 @@ onMounted(async () => {
   }
 })
 
-function saveProvider() {
-  ElMessage.success('Provider 配置界面已预留，后续接入 llm_providers 表')
+async function loadProviders() {
+  providers.value = await rssApi.llmProviders()
+}
+
+function applyProviderTemplate() {
+  if (providerTemplate.value === 'vLLM Qwen3-8B') {
+    Object.assign(provider, {
+      name: 'Local vLLM Qwen3-8B',
+      provider_type: 'vllm',
+      baseUrl: 'http://127.0.0.1:8001/v1',
+      apiKey: '',
+      model: 'Qwen/Qwen3-8B',
+      enabled: true,
+      isDefault: true
+    })
+  } else if (providerTemplate.value === 'Ollama') {
+    Object.assign(provider, {
+      name: 'Local Ollama',
+      provider_type: 'ollama',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      apiKey: 'ollama',
+      model: 'qwen3:8b',
+      enabled: true,
+      isDefault: true
+    })
+  } else {
+    Object.assign(provider, {
+      name: 'OpenAI Compatible',
+      provider_type: 'openai_compatible',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: 'gpt-4o-mini',
+      enabled: true,
+      isDefault: true
+    })
+  }
+  editingProviderId.value = null
+}
+
+function resetProviderForm() {
+  applyProviderTemplate()
+}
+
+function editProvider(row: LLMProvider) {
+  editingProviderId.value = row.id
+  Object.assign(provider, {
+    name: row.name,
+    provider_type: row.provider_type,
+    baseUrl: row.base_url,
+    apiKey: '',
+    model: row.model,
+    enabled: row.enabled,
+    isDefault: row.is_default
+  })
+}
+
+async function removeProvider(id: number) {
+  try {
+    await rssApi.deleteLLMProvider(id)
+    await loadProviders()
+    if (editingProviderId.value === id) resetProviderForm()
+    ElMessage.success('Provider 已删除')
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e))
+  }
+}
+
+async function saveProvider() {
+  savingProvider.value = true
+  try {
+    const payload = {
+      name: provider.name,
+      provider_type: provider.provider_type,
+      base_url: provider.baseUrl,
+      api_key: provider.apiKey,
+      model: provider.model,
+      enabled: provider.enabled,
+      is_default: provider.isDefault
+    }
+    if (editingProviderId.value) {
+      await rssApi.updateLLMProvider(editingProviderId.value, payload)
+      ElMessage.success('Provider 已更新')
+    } else {
+      await rssApi.createLLMProvider(payload)
+      ElMessage.success('Provider 已新增')
+    }
+    await loadProviders()
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e))
+  } finally {
+    savingProvider.value = false
+  }
 }
 
 async function saveRag() {
@@ -150,6 +283,10 @@ async function saveRag() {
 
 .rag-panel {
   margin-top: 24px;
+}
+
+.provider-table {
+  margin-top: 18px;
 }
 
 .field-hint {

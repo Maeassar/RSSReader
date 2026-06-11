@@ -14,6 +14,10 @@ export function getErrorMessage(e: unknown, fallback = '请求异常，请检查
     if (status === 401 || status === 403) {
       return '鉴权失败：请检查您的 API 密钥 (API Key) 是否正确'
     }
+    const detail = e.response?.data?.detail
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail
+    }
     if (status === 404 || status === 500 || !e.response) {
       return '连接失败：无法访问后端服务，请检查 API URL 链接是否正确'
     }
@@ -66,10 +70,35 @@ export interface AIResult {
   id: number
   article_id: number
   type: string
+  provider_id?: number | null
+  prompt: string
   result: string
   input_tokens: number
   output_tokens: number
   created_at: string
+}
+
+export type LLMProviderType = 'openai_compatible' | 'vllm' | 'ollama' | 'custom'
+
+export interface LLMProvider {
+  id: number
+  name: string
+  provider_type: LLMProviderType
+  base_url: string
+  model: string
+  enabled: boolean
+  is_default: boolean
+  has_api_key: boolean
+}
+
+export interface LLMProviderPayload {
+  name: string
+  provider_type: LLMProviderType
+  base_url: string
+  api_key?: string
+  model: string
+  enabled: boolean
+  is_default: boolean
 }
 
 export interface OperationResult {
@@ -220,9 +249,14 @@ export const rssApi = {
     api.get<Blob>(`/export/articles/${articleId}/markdown`, { responseType: 'blob' }).then((res) => res.data),
   exportBatchDigestMarkdown: (payload: BatchDigestExportRequest) =>
     api.post<BatchDigestExportResponse>('/export/digests/markdown', payload).then((res) => res.data),
-  summary: (articleId: number) => api.post<AIResult>(`/ai/summary/${articleId}`).then((res) => res.data),
+  summary: (articleId: number, payload?: { provider_id?: number | null; refresh?: boolean }) =>
+    api.post<AIResult>(`/ai/summary/${articleId}`, payload ?? {}, { timeout: 90000 }).then((res) => res.data),
   translate: (articleId: number) => api.post<AIResult>(`/ai/translate/${articleId}`).then((res) => res.data),
   suggestTags: (articleId: number) => api.post<AIResult>(`/ai/tag-suggest/${articleId}`).then((res) => res.data),
+  llmProviders: () => api.get<LLMProvider[]>('/ai/providers').then((res) => res.data),
+  createLLMProvider: (payload: LLMProviderPayload) => api.post<LLMProvider>('/ai/providers', payload).then((res) => res.data),
+  updateLLMProvider: (id: number, payload: Partial<LLMProviderPayload>) => api.put<LLMProvider>(`/ai/providers/${id}`, payload).then((res) => res.data),
+  deleteLLMProvider: (id: number) => api.delete<OperationResult>(`/ai/providers/${id}`).then((res) => res.data),
   llmStats: () => api.get('/stats/llm').then((res) => res.data),
   syncLogs: () => api.get<SyncLog[]>('/logs/sync').then((res) => res.data),
   search: (q: string, limit = 50) =>
