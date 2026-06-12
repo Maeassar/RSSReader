@@ -326,28 +326,146 @@ class SQLiteRepository:
             )
         return self.get_note(article_id)
 
-    def create_ai_result(self, article_id, result_type, prompt, result):
+    def list_llm_providers(self):
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM llm_providers
+                ORDER BY is_default DESC, enabled DESC, id ASC
+                """
+            ).fetchall()
+        return [self._llm_provider(row, include_api_key=False) for row in rows]
+
+    def get_llm_provider(self, provider_id: int):
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM llm_providers WHERE id = ?", (provider_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"LLM provider {provider_id} not found")
+        return self._llm_provider(row, include_api_key=True)
+
+    def get_default_llm_provider(self):
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT *
+                FROM llm_providers
+                WHERE enabled = 1
+                ORDER BY is_default DESC, id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            raise ValueError("No enabled LLM provider configured")
+        return self._llm_provider(row, include_api_key=True)
+
+    def create_llm_provider(self, payload):
+        data = payload.model_dump()
+        timestamp = now()
+        with get_connection() as conn:
+            if data.get("is_default"):
+                conn.execute("UPDATE llm_providers SET is_default = 0")
+            cursor = conn.execute(
+                """
+                INSERT INTO llm_providers (
+                    name, provider_type, base_url, api_key, model,
+                    enabled, is_default, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    data["name"],
+                    data.get("provider_type") or "openai_compatible",
+                    data["base_url"].rstrip("/"),
+                    data.get("api_key") or "",
+                    data["model"],
+                    1 if data.get("enabled", True) else 0,
+                    1 if data.get("is_default") else 0,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            provider_id = cursor.lastrowid
+            row = conn.execute("SELECT * FROM llm_providers WHERE id = ?", (provider_id,)).fetchone()
+        return self._llm_provider(row, include_api_key=False)
+
+    def update_llm_provider(self, provider_id: int, payload):
+        self.get_llm_provider(provider_id)
+        data = payload.model_dump(exclude_unset=True)
+        if not data:
+            provider = self.get_llm_provider(provider_id)
+            provider.pop("api_key", None)
+            return provider
+
+        assignments = []
+        values = []
+        for key, value in data.items():
+            if value is None:
+                continue
+            if key == "base_url" and isinstance(value, str):
+                value = value.rstrip("/")
+            if key in {"enabled", "is_default"}:
+                value = 1 if value else 0
+            assignments.append(f"{key} = ?")
+            values.append(value)
+
+        if not assignments:
+            provider = self.get_llm_provider(provider_id)
+            provider.pop("api_key", None)
+            return provider
+
+        timestamp = now()
+        values.extend([timestamp, provider_id])
+        with get_connection() as conn:
+            if data.get("is_default") is True:
+                conn.execute("UPDATE llm_providers SET is_default = 0 WHERE id != ?", (provider_id,))
+            conn.execute(
+                f"UPDATE llm_providers SET {', '.join(assignments)}, updated_at = ? WHERE id = ?",
+                values,
+            )
+        provider = self.get_llm_provider(provider_id)
+        provider.pop("api_key", None)
+        return provider
+
+    def delete_llm_provider(self, provider_id: int):
+        self.get_llm_provider(provider_id)
+        with get_connection() as conn:
+            conn.execute("DELETE FROM llm_providers WHERE id = ?", (provider_id,))
+
+    def create_ai_result(
+        self,
+        article_id,
+        result_type,
+        prompt,
+        result,
+        provider: str | None = None,
+        model: str | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+    ):
         self.get_article(article_id)
         with get_connection() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO ai_results (entry_id, task_type, prompt, result)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO ai_results (
+                    entry_id, task_type, provider, model, prompt, result,
+                    input_tokens, output_tokens
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (article_id, result_type, prompt, result),
+                (
+                    article_id,
+                    result_type,
+                    provider,
+                    model,
+                    prompt,
+                    result,
+                    max(0, int(input_tokens or 0)),
+                    max(0, int(output_tokens or 0)),
+                ),
             )
             row = conn.execute("SELECT * FROM ai_results WHERE id = ?", (cursor.lastrowid,)).fetchone()
-        return {
-            "id": row["id"],
-            "article_id": row["entry_id"],
-            "type": row["task_type"],
-            "provider_id": None,
-            "prompt": row["prompt"],
-            "result": row["result"],
-            "input_tokens": row["input_tokens"],
-            "output_tokens": row["output_tokens"],
-            "created_at": row["created_at"],
-        }
+        return self._ai_result(row)
 
     def get_latest_ai_result(self, article_id, result_type):
         self.get_article(article_id)
@@ -364,23 +482,52 @@ class SQLiteRepository:
             ).fetchone()
         if row is None:
             return None
-        return {
-            "id": row["id"],
-            "article_id": row["entry_id"],
-            "type": row["task_type"],
-            "provider_id": None,
-            "prompt": row["prompt"],
-            "result": row["result"],
-            "input_tokens": row["input_tokens"],
-            "output_tokens": row["output_tokens"],
-            "created_at": row["created_at"],
-        }
+        return self._ai_result(row)
 
     def stats(self):
         with get_connection() as conn:
             article_count = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
-            ai_count = conn.execute("SELECT COUNT(*) FROM ai_results").fetchone()[0]
-        return {"total_articles": article_count, "total_calls": ai_count, "input_tokens": 0, "output_tokens": 0, "by_feature": []}
+            usage = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_calls,
+                    COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                    COALESCE(SUM(output_tokens), 0) AS output_tokens
+                FROM ai_results
+                """
+            ).fetchone()
+            by_feature = conn.execute(
+                """
+                SELECT
+                    task_type AS name,
+                    COUNT(*) AS calls,
+                    COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens
+                FROM ai_results
+                GROUP BY task_type
+                ORDER BY calls DESC, name ASC
+                """
+            ).fetchall()
+            by_provider = conn.execute(
+                """
+                SELECT
+                    COALESCE(provider, 'unknown') AS provider,
+                    COALESCE(model, 'unknown') AS model,
+                    COUNT(*) AS calls,
+                    COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                    COALESCE(SUM(output_tokens), 0) AS output_tokens
+                FROM ai_results
+                GROUP BY provider, model
+                ORDER BY calls DESC, provider ASC, model ASC
+                """
+            ).fetchall()
+        return {
+            "total_articles": article_count,
+            "total_calls": usage["total_calls"],
+            "input_tokens": usage["input_tokens"],
+            "output_tokens": usage["output_tokens"],
+            "by_feature": [dict(row) for row in by_feature],
+            "by_provider": [dict(row) for row in by_provider],
+        }
 
     def list_tags(self):
         return self.tags
@@ -612,6 +759,34 @@ class SQLiteRepository:
             "title_snippet": row["title_snippet"],
             "summary_snippet": row["summary_snippet"],
             "content_snippet": row["content_snippet"],
+        }
+
+    def _llm_provider(self, row, include_api_key: bool = False):
+        provider = {
+            "id": row["id"],
+            "name": row["name"],
+            "provider_type": row["provider_type"],
+            "base_url": row["base_url"],
+            "model": row["model"],
+            "enabled": bool(row["enabled"]),
+            "is_default": bool(row["is_default"]),
+            "has_api_key": bool(row["api_key"]),
+        }
+        if include_api_key:
+            provider["api_key"] = row["api_key"] or ""
+        return provider
+
+    def _ai_result(self, row):
+        return {
+            "id": row["id"],
+            "article_id": row["entry_id"],
+            "type": row["task_type"],
+            "provider_id": None,
+            "prompt": row["prompt"],
+            "result": row["result"],
+            "input_tokens": row["input_tokens"],
+            "output_tokens": row["output_tokens"],
+            "created_at": row["created_at"],
         }
 
 

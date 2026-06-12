@@ -201,9 +201,33 @@
           <el-tooltip :content="store.selectedArticle.is_starred ? '取消收藏' : '收藏'" placement="top">
             <el-button class="toolbar-icon-button" :class="{ active: store.selectedArticle.is_starred }" :icon="Star" circle @click="store.toggleStar(store.selectedArticle)" />
           </el-tooltip>
-          <el-tooltip content="生成摘要" placement="top">
-            <el-button class="toolbar-icon-button" :icon="MagicStick" circle @click="runSummary" />
-          </el-tooltip>
+          <el-popover placement="bottom" :width="320" trigger="click" popper-class="summary-popover">
+            <template #reference>
+              <el-button class="toolbar-icon-button" :loading="summaryRunning" :icon="MagicStick" circle aria-label="AI 摘要" />
+            </template>
+            <div class="summary-popover-body">
+              <label class="dropdown-inline-label">Provider</label>
+              <el-select v-model="summaryProviderId" size="small" placeholder="默认 Provider" style="width: 100%">
+                <el-option label="默认 Provider" :value="null" />
+                <el-option
+                  v-for="provider in summaryProviders"
+                  :key="provider.id"
+                  :label="`${provider.is_default ? '✓ ' : ''}${provider.name} · ${provider.model}`"
+                  :value="provider.id"
+                  :disabled="!provider.enabled"
+                />
+              </el-select>
+              <label class="dropdown-inline-label">摘要模式</label>
+              <el-segmented v-model="summaryMode" :options="summaryModeOptions" size="small" />
+              <label class="dropdown-inline-label">语言</label>
+              <el-segmented v-model="summaryLanguage" :options="summaryLanguageOptions" size="small" />
+              <label class="dropdown-inline-label">长度</label>
+              <el-input-number v-model="summaryMaxWords" :min="120" :max="1200" :step="60" size="small" style="width: 100%" />
+              <el-button type="primary" :icon="MagicStick" :loading="summaryRunning" class="summary-generate-button" @click="runSummary">
+                生成摘要
+              </el-button>
+            </div>
+          </el-popover>
           <el-popover placement="bottom" :width="320" trigger="click" popper-class="tag-popover">
             <template #reference>
               <el-button class="toolbar-icon-button" :icon="CollectionTag" circle aria-label="标签" title="标签" />
@@ -273,7 +297,50 @@
         <div class="article-reading-surface">
           <div ref="articleBodyRef" class="article-body" v-html="renderedArticleHtml"></div>
         </div>
-        <el-alert v-if="aiResult" :title="aiResult" type="success" show-icon :closable="false" />
+        <div v-if="summaryRunning || (summaryStepsExpanded && summaryStepItems.length)" class="summary-thought-panel">
+          <div class="summary-thought-header">
+            <div class="summary-thought-title-group">
+              <span class="summary-thought-kicker">{{ summaryRunning ? '实时过程' : '生成记录' }}</span>
+              <strong>{{ summaryRunning ? 'Summary Agent 正在工作' : '摘要生成过程' }}</strong>
+              <small>{{ summaryRunning ? '步骤由后端真实事件驱动，耗时停留在哪里就代表当前正在做哪里。' : '可展开查看上次生成时后端执行过的步骤。' }}</small>
+            </div>
+            <el-button v-if="!summaryRunning" class="summary-thought-toggle" size="small" text @click="summaryStepsExpanded = false">
+              隐藏
+            </el-button>
+          </div>
+          <transition-group name="summary-stream" tag="div" class="summary-thought-stream">
+            <div
+              v-for="step in summaryStepItems"
+              :key="step.id"
+              class="summary-thought-item"
+              :class="step.status"
+            >
+              <span class="summary-thought-line"></span>
+              <span class="summary-thought-dot"></span>
+              <div class="summary-thought-copy">
+                <div class="summary-thought-row">
+                  <strong>{{ step.title }}</strong>
+                  <span v-if="step.elapsedMs !== undefined" class="summary-thought-time">{{ formatElapsed(step.elapsedMs) }}</span>
+                </div>
+                <p>{{ step.detail }}</p>
+              </div>
+            </div>
+          </transition-group>
+        </div>
+        <el-alert v-if="aiResult" type="success" show-icon :closable="false" class="summary-result-alert">
+          <template #title>
+            <div class="summary-result-title">
+              <span>AI 摘要</span>
+              <div class="summary-result-actions">
+                <span v-if="summaryUsage" class="summary-usage">{{ summaryUsage }}</span>
+                <el-button v-if="summaryStepItems.length" size="small" text @click="summaryStepsExpanded = !summaryStepsExpanded">
+                  {{ summaryStepsExpanded ? '收起思考过程' : '查看思考过程' }}
+                </el-button>
+              </div>
+            </div>
+          </template>
+          <div class="summary-result-body">{{ aiResult }}</div>
+        </el-alert>
         <el-divider />
         <h2 class="reader-section-title">笔记</h2>
         <el-input v-model="note" type="textarea" :rows="6" placeholder="写下这篇文章的 Markdown 笔记" />
@@ -314,8 +381,8 @@ import { Check, CollectionTag, Download, Files, MagicStick, MoreFilled, Plus, Re
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { Article, FeedSyncReport } from '../api/client'
-import { rssApi } from '../api/client'
+import type { Article, FeedSyncReport, LLMProvider, SummaryStreamEvent } from '../api/client'
+import { getErrorMessage, rssApi } from '../api/client'
 import { useReaderStore } from '../stores/reader'
 import { apiErrorMessage, showSyncReportMessage, statusTagType, syncSuggestion } from '../utils/syncDiagnostics'
 import FeedManageView from './FeedManageView.vue'
@@ -325,6 +392,35 @@ const route = useRoute()
 const router = useRouter()
 const note = ref('')
 const aiResult = ref('')
+const summaryUsage = ref('')
+const summaryRunning = ref(false)
+const summaryStepsExpanded = ref(false)
+const summaryActiveArticleId = ref<number | null>(null)
+const summaryProviders = ref<LLMProvider[]>([])
+const summaryProviderId = ref<number | null>(null)
+const summaryMode = ref<'brief' | 'structured' | 'deep'>('structured')
+const summaryLanguage = ref<'zh' | 'en'>('zh')
+const summaryMaxWords = ref(450)
+const summaryModeOptions = [
+  { label: '简短', value: 'brief' },
+  { label: '结构化', value: 'structured' },
+  { label: '深入', value: 'deep' }
+]
+const summaryLanguageOptions = [
+  { label: '中文', value: 'zh' },
+  { label: 'EN', value: 'en' }
+]
+type SummaryThoughtStep = {
+  id: string
+  title: string
+  detail: string
+  status: 'active' | 'done' | 'error'
+  startedAt: number
+  elapsedMs?: number
+  eventType: string
+}
+
+const summaryStepItems = ref<SummaryThoughtStep[]>([])
 const articleBodyRef = ref<HTMLElement | null>(null)
 const exportingMarkdown = ref(false)
 const feedManagerOpen = ref(false)
@@ -395,6 +491,7 @@ onMounted(async () => {
   window.addEventListener('resize', handleWindowResize)
   handleWindowResize()
   await store.loadAll()
+  await loadSummaryProviders()
   const articleId = route.query.article
   if (articleId) {
     await store.selectArticle(Number(articleId))
@@ -409,7 +506,13 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleWindowResize)
 })
 
-watch(() => store.selectedArticle?.id, loadNote)
+watch(
+  () => store.selectedArticle?.id,
+  async () => {
+    clearSummaryResult()
+    await loadNote()
+  }
+)
 watch(renderedArticleHtml, decorateArticleLinks, { flush: 'post' })
 watch(
   () => store.articles,
@@ -454,6 +557,14 @@ async function loadNote() {
   if (!store.selectedArticle) return
   const data = await rssApi.note(store.selectedArticle.id)
   note.value = data.content_markdown
+}
+
+async function loadSummaryProviders() {
+  try {
+    summaryProviders.value = await rssApi.llmProviders()
+  } catch (error) {
+    console.warn('Failed to load LLM providers.', error)
+  }
 }
 
 async function decorateArticleLinks() {
@@ -789,10 +900,140 @@ function renderMarkdownInline(value: string, options: { allowLinks?: boolean } =
   return html
 }
 
+function clearSummaryResult() {
+  aiResult.value = ''
+  summaryUsage.value = ''
+  summaryStepItems.value = []
+  summaryStepsExpanded.value = false
+  summaryRunning.value = false
+  summaryActiveArticleId.value = null
+}
+
 async function runSummary() {
-  if (!store.selectedArticle) return
-  const data = await rssApi.summary(store.selectedArticle.id)
-  aiResult.value = data.result
+  const articleId = store.selectedArticle?.id
+  if (!articleId) return
+  summaryRunning.value = true
+  summaryActiveArticleId.value = articleId
+  summaryStepsExpanded.value = true
+  aiResult.value = ''
+  summaryUsage.value = ''
+  summaryStepItems.value = []
+  try {
+    await rssApi.streamSummary(articleId, {
+      provider_id: summaryProviderId.value,
+      refresh: true,
+      mode: summaryMode.value,
+      language: summaryLanguage.value,
+      max_words: summaryMaxWords.value
+    }, (event) => {
+      if (summaryActiveArticleId.value !== articleId || store.selectedArticle?.id !== articleId) return
+      handleSummaryStreamEvent(event)
+    })
+    ElMessage.success('摘要已生成')
+  } catch (error) {
+    failSummarySteps(getErrorMessage(error, '摘要生成失败，请检查 Provider 配置'))
+    ElMessage.error(getErrorMessage(error, '摘要生成失败，请检查 Provider 配置'))
+  } finally {
+    if (summaryActiveArticleId.value === articleId) {
+      summaryRunning.value = false
+      summaryActiveArticleId.value = null
+    }
+  }
+}
+
+function handleSummaryStreamEvent(event: SummaryStreamEvent) {
+  if (event.type === 'result' && event.result) {
+    aiResult.value = event.result.result
+    summaryUsage.value = `${event.result.input_tokens} 输入 / ${event.result.output_tokens} 输出 tokens`
+    markSummaryStepsDone()
+    return
+  }
+  if (event.type === 'done') {
+    markSummaryStepsDone()
+    summaryStepsExpanded.value = false
+    return
+  }
+  if (event.type === 'error') {
+    failSummarySteps(event.detail || '摘要生成失败，请检查 Provider 配置、Ollama 服务或网络连接后重试。')
+    return
+  }
+  appendSummaryStep(event)
+}
+
+function appendSummaryStep(event: SummaryStreamEvent) {
+  const now = Date.now()
+  summaryStepItems.value = summaryStepItems.value.map((step) => (
+    step.status === 'active'
+      ? { ...step, status: 'done' as const, elapsedMs: now - step.startedAt }
+      : step
+  ))
+  summaryStepItems.value.push({
+    id: `${event.type}-${summaryStepItems.value.length}-${now}`,
+    title: event.title || summaryEventTitle(event.type),
+    detail: event.detail || summaryEventDetail(event),
+    status: 'active',
+    startedAt: now,
+    eventType: event.type
+  })
+}
+
+function markSummaryStepsDone() {
+  const now = Date.now()
+  summaryStepItems.value = summaryStepItems.value.map((step) => (
+    step.status === 'active'
+      ? { ...step, status: 'done' as const, elapsedMs: now - step.startedAt }
+      : step
+  ))
+}
+
+function failSummarySteps(detail: string) {
+  const now = Date.now()
+  summaryStepItems.value = [
+    ...summaryStepItems.value.map((step) => (
+      step.status === 'active'
+        ? { ...step, status: 'done' as const, elapsedMs: now - step.startedAt }
+        : step
+    )),
+    {
+      id: `error-${now}`,
+      title: '生成失败',
+      detail,
+      status: 'error',
+      startedAt: now,
+      eventType: 'error'
+    }
+  ]
+  summaryStepsExpanded.value = true
+}
+
+function summaryEventTitle(type: string) {
+  const titles: Record<string, string> = {
+    prepare: '读取文章上下文',
+    budget: '评估上下文预算',
+    chunk_plan: '切分长文上下文',
+    chunk_start: '提取片段事实',
+    chunk_done: '片段事实完成',
+    compact_plan: '规划上下文压缩',
+    compact_start: '压缩中间笔记',
+    compact_done: '中间笔记压缩完成',
+    final_start: '合成最终摘要',
+    final_done: '最终摘要完成',
+    save_start: '保存摘要结果',
+    save_done: '摘要结果已保存',
+    cache_hit: '读取已有摘要'
+  }
+  return titles[type] || '处理摘要任务'
+}
+
+function summaryEventDetail(event: SummaryStreamEvent) {
+  if (event.usage) return `${event.usage.input_tokens} 输入 / ${event.usage.output_tokens} 输出 tokens`
+  if (event.estimated_tokens && event.input_budget) return `约 ${event.estimated_tokens} tokens，预算 ${event.input_budget} tokens。`
+  return '后端已推进到该步骤。'
+}
+
+function formatElapsed(value: number) {
+  if (value < 1000) return `${value}ms`
+  return `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}s`
 }
 
 async function runTranslate() {
@@ -1094,6 +1335,209 @@ function exportNote() {
   border-width: 0 1px 0 0;
   box-shadow: none;
   padding: 16px 14px 20px;
+}
+
+.summary-result-alert {
+  margin: 18px 0 0;
+}
+
+.summary-thought-panel {
+  max-width: 860px;
+  margin: 20px auto 0;
+  padding: 16px 18px 14px;
+  border: 1px solid color-mix(in srgb, var(--app-border) 84%, transparent 16%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-surface-strong) 78%, var(--app-bg) 22%);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--app-text) 5%, transparent 95%);
+}
+
+.summary-thought-header,
+.summary-result-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-thought-title-group {
+  display: grid;
+  gap: 2px;
+}
+
+.summary-thought-kicker {
+  color: color-mix(in srgb, var(--theme-accent) 78%, var(--app-text) 22%);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.summary-thought-title-group strong {
+  color: var(--app-text);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.summary-thought-title-group small {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.summary-thought-toggle {
+  flex: 0 0 auto;
+}
+
+.summary-thought-stream {
+  display: grid;
+  gap: 0;
+  margin-top: 16px;
+}
+
+.summary-thought-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 50px;
+  padding: 0 0 14px;
+  color: var(--el-text-color-secondary);
+}
+
+.summary-thought-item:last-child {
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+.summary-thought-line {
+  position: absolute;
+  left: 6px;
+  top: 19px;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--app-border) 70%, transparent 30%);
+}
+
+.summary-thought-item:last-child .summary-thought-line {
+  display: none;
+}
+
+.summary-thought-dot {
+  position: relative;
+  z-index: 1;
+  width: 13px;
+  height: 13px;
+  margin-top: 3px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 34%, var(--app-border) 66%);
+  background: var(--app-surface);
+}
+
+.summary-thought-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.summary-thought-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.summary-thought-row strong {
+  min-width: 0;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.summary-thought-time {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.summary-thought-item.done,
+.summary-thought-item.active {
+  color: var(--app-text);
+}
+
+.summary-thought-item.done .summary-thought-dot {
+  background: color-mix(in srgb, var(--theme-accent) 70%, var(--app-surface) 30%);
+  border-color: color-mix(in srgb, var(--theme-accent) 72%, var(--app-border) 28%);
+}
+
+.summary-thought-item.active .summary-thought-dot {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--theme-accent) 14%, transparent 86%);
+  animation: summary-thinking-pulse 1.45s ease-in-out infinite;
+}
+
+.summary-thought-item.error .summary-thought-dot {
+  background: var(--el-color-danger);
+  border-color: var(--el-color-danger);
+}
+
+.summary-thought-item.error {
+  color: var(--el-color-danger);
+}
+
+.summary-thought-item p {
+  margin: 0;
+  line-height: 1.55;
+  font-size: 13px;
+}
+
+.summary-stream-enter-active {
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.summary-stream-enter-from {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@keyframes summary-thinking-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--theme-accent) 12%, transparent 88%);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--theme-accent) 4%, transparent 96%);
+  }
+}
+
+.summary-popover-body {
+  display: grid;
+  gap: 8px;
+}
+
+.summary-generate-button {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.summary-result-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-usage {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.summary-result-body {
+  white-space: pre-wrap;
+  line-height: 1.7;
 }
 
 .article-list-header {

@@ -117,20 +117,46 @@ class NoteRead(BaseModel):
     updated_at: datetime
 
 
+LLMProviderType = Literal["openai_compatible", "vllm", "ollama", "custom"]
+
+
 class LLMProviderCreate(BaseModel):
     name: str
+    provider_type: LLMProviderType = "openai_compatible"
     base_url: str
-    api_key: str
+    api_key: str = ""
     model: str
     enabled: bool = True
+    is_default: bool = False
+
+
+class LLMProviderUpdate(BaseModel):
+    name: str | None = None
+    provider_type: LLMProviderType | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    enabled: bool | None = None
+    is_default: bool | None = None
 
 
 class LLMProviderRead(BaseModel):
     id: int
     name: str
+    provider_type: LLMProviderType = "openai_compatible"
     base_url: str
     model: str
     enabled: bool
+    is_default: bool = False
+    has_api_key: bool = False
+
+
+class SummaryRequest(BaseModel):
+    provider_id: int | None = None
+    refresh: bool = True
+    mode: Literal["brief", "structured", "deep"] = "structured"
+    language: Literal["zh", "en"] = "zh"
+    max_words: int = Field(default=450, ge=120, le=1200)
 
 
 class AIResultRead(BaseModel):

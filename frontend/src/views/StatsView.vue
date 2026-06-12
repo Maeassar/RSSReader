@@ -24,6 +24,20 @@
             <div class="stats-card-value">{{ stats.output_tokens || 0 }}</div>
           </div>
         </div>
+        <div v-if="stats.by_feature?.length" class="usage-breakdown">
+          <h3>按功能</h3>
+          <div v-for="item in stats.by_feature" :key="item.name" class="usage-row">
+            <span>{{ featureLabel(item.name) }}</span>
+            <span>{{ item.calls }} 次 · {{ item.tokens }} tokens</span>
+          </div>
+        </div>
+        <div v-if="stats.by_provider?.length" class="usage-breakdown">
+          <h3>按 Provider</h3>
+          <div v-for="item in stats.by_provider" :key="`${item.provider}-${item.model}`" class="usage-row">
+            <span>{{ item.provider }} · {{ item.model }}</span>
+            <span>{{ item.calls }} 次 · {{ item.input_tokens + item.output_tokens }} tokens</span>
+          </div>
+        </div>
       </section>
       <section class="panel stats-log-panel">
         <div class="stats-panel-head">
@@ -90,6 +104,15 @@ function statusLabel(status: string) {
   }
   return labels[status] || status
 }
+
+function featureLabel(name: string) {
+  const labels: Record<string, string> = {
+    summary: '文章摘要',
+    translation: '翻译',
+    tag_suggestion: '标签建议'
+  }
+  return labels[name] || name
+}
 </script>
 
 <style scoped>
@@ -140,6 +163,27 @@ function statusLabel(status: string) {
   font-size: 30px;
   font-weight: 800;
   letter-spacing: -0.03em;
+}
+
+.usage-breakdown {
+  margin-top: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.usage-breakdown h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.usage-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in srgb, var(--app-border) 60%, transparent 40%);
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 
 .stats-timeline {

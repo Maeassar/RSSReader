@@ -219,6 +219,25 @@
 - OPML 导入新增 `partial` 结果和计数，表示“订阅源已添加但首次同步失败”，不会阻断其它订阅继续导入和同步。
 - 前端订阅管理页适配新的添加结果，手动添加 partial 会显示 warning 和同步结果表；OPML 结果表也会显示 partial 状态、失败原因和建议。
 
+## 2026-06-11
+
+- 使用 AI Coding Agent 完成 Week16 Summary Agent 模块，接入 `llm_providers` 配置、OpenAI-compatible Chat Completions、vLLM/Ollama/OpenAI-compatible provider 模板和摘要用量统计。
+- 继续强化 Summary Agent：摘要请求支持 `brief`、`structured`、`deep` 三种模式，支持中文/英文输出和长度预算；prompt 参考 coding agent workflow，要求先理解约束、提取事实、再自检忠实性，并输出可信度。
+- 根据“类似 opencode 的 agent 强化”反馈，补充长文上下文循环：短文单轮摘要，长文自动按 token budget 切块，逐块生成事实笔记；中间笔记超预算时继续 compaction；最后 final merge 得到整篇文章摘要，避免只截断并总结开头。
+- 为 Qwen3 兼容增加输出清洗：移除 `<think>...</think>` 与 `最终答案：` 前缀；对 Ollama provider 自动传入 `reasoning_effort: "none"`，避免 Qwen3 通过 OpenAI-compatible API 时把内容放入 reasoning 字段而正文为空。
+- 前端阅读页的摘要下拉菜单新增 provider 选择、摘要模式、语言和长度设置；AI 设置页支持本地 vLLM Qwen3-8B、Ollama 和通用 OpenAI-compatible provider 配置。
+- 实际安装并运行 Ollama `qwen3:8b`，订阅 `https://hnrss.org/frontpage`、`https://feeds.bbci.co.uk/news/technology/rss.xml` 和 `https://hnrss.org/newest?q=AI` 后，用 BBC Technology 的真实文章执行摘要，成功写入 `ai_results` 并统计为 `348` input tokens / `194` output tokens。
+- 使用真实 Ollama `qwen3:8b` 对强制小上下文长文执行多轮摘要验证，触发 `7` 个 chunk 调用和 final merge，累计 `7737` input tokens / `2764` output tokens。
+- 排查到 Homebrew formula 版 `ollama 0.30.7` 缺少 `llama-server`，真实推理时报 `llama-server binary not found`；改用 `brew install --cask ollama-app` 后通过 `/Applications/Ollama.app/Contents/Resources/ollama serve` 启动完整运行时。
+- 当日验证：后端 `python3 -m unittest discover -s backend/tests` 通过，前端 `./node_modules/.bin/vue-tsc --noEmit --pretty false` 通过，真实 Ollama/Qwen3 API 摘要和 `/api/stats/llm` 用量聚合通过。
+- 当前限制：vLLM 模板和 OpenAI-compatible 调用链路已完成，但本次真实本地推理使用的是 Ollama `qwen3:8b`；若需要演示 vLLM 权重加载，还需要在具备足够 GPU/内存的机器上单独启动 vLLM。
+- 根据人工验收反馈继续优化摘要交互：provider 不再承担“开始生成”的动作，摘要面板新增明确的 `生成摘要` 按钮；摘要运行时展示贴合阅读页风格的内嵌思考流，步骤按时间顺序逐条向下追加，完成后自动折叠，用户可重新展开查看思考过程；切换文章时清空上一篇摘要，避免结果串页。
+- 根据进一步反馈修正“思考流”实现：移除前端 `setInterval` 固定步骤和 prompt 事后解析，改为后端 Summary Agent 在真实执行节点发出 `prepare`、`budget`、`chunk_start`、`chunk_done`、`final_start`、`final_done`、`save_done` 等事件。
+- 新增 `POST /api/ai/summary/{article_id}/stream`，使用 `StreamingResponse` 输出 SSE；前端 `streamSummary()` 用 `fetch` POST 请求读取流，阅读页只渲染真实后端事件，并展示当前步骤实际停留时间。
+- 对本地 Ollama `qwen3:8b` 执行真实长文流式摘要验证：文章约 `15008` 输入 tokens，正文切成 `4` 个 chunk，最终合成并保存，累计用量 `14145` input tokens / `863` output tokens。
+- 为避免最后结果帧过大，流式 `result` 事件不再携带完整 prompt trace；数据库中的 `ai_results.prompt` 仍保留完整多轮 trace，便于开发排查。
+- 更新 `update_docs/Week16_GentleCold.md`，记录真实事件流实现、Ollama 测试、前端假进度问题和解决方案。
+
 ## 2026-06-08（布局适配修正）
 
 - 使用 AI Coding Agent 根据界面反馈继续收敛阅读页与订阅管理页布局。
@@ -233,3 +252,13 @@
 
 - 使用 AI Coding Agent 按要求撤回 `update_docs/Week14_handingna.md` 中本次关于“添加订阅后首次同步”的周报修改。
 - 本次仅调整周报记录范围，不改变后端、前端、测试或数据库清空结果。
+
+## 2026-06-11（Week16 Summary Agent）
+
+- 使用 AI Coding Agent 协助完成朱文韬负责的 Week16 Summary Agent 后端系统。
+- 后端新增 Summary Agent、LLM Provider CRUD、OpenAI-compatible Chat Completions 调用、vLLM/Ollama provider 类型和摘要用量统计。
+- 前端 AI 设置页由“Provider 预留界面”改为真实配置管理，新增 vLLM Qwen3-8B、Ollama、OpenAI-compatible 快速模板；阅读页摘要按钮支持选择 provider 并展示输入/输出 token；统计页展示按功能和按 provider 的用量明细。
+- 实测通过本地 OpenAI-compatible 服务模拟 Qwen3-8B，验证 vLLM 与 Ollama provider 类型均可生成摘要并写入 `ai_results`。
+- 实际打开 Electron 应用验证桌面端链路：Electron 主进程启动 FastAPI 后端，前端通过 preload 注入的 `apiBaseUrl` 调用后端；实际订阅 `https://hnrss.org/frontpage` 成功同步 21 篇文章，并对真实订阅文章完成摘要生成与用量统计。
+- 新增 `update_docs/Week16_GentleCold.md`，记录功能、接口、测试、ModelScope/vLLM 与 Ollama 使用方式、遇到的问题和解决方案。
+- 当前限制：本机未真实加载 Qwen3-8B 权重推理，已提供 ModelScope 下载和 vLLM 启动命令；软件调用链路使用本地 OpenAI-compatible 测试服务完成验证。
