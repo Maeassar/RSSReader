@@ -179,9 +179,87 @@ npm run build
 
 解决：拖拽开始时 `body.style.transition = 'none'`，mouseup 后清空，只在展开/收起时保留过渡动画。
 
+### 8. 抽屉拖到顶后右侧滚动条变长，底部摘要内容被截断
+
+原因：`.reader-detail-panel` 是 `display: flex; flex-direction: column; overflow: hidden`，上方文章区 `reader-scroll-area` 设了 `flex: 1 1 auto; min-height: 0`，抽屉设了 `flex-shrink: 0`。当 `--drawer-height` 超出面板剩余空间时，抽屉不收缩，文章区被压缩至 0，抽屉底部被 `overflow: hidden` 截断，导致摘要底部内容不可见；同时因 flex 布局溢出，右侧出现多余滚动条。
+
+解决：在所有涉及最大高度计算的地方，统一为：
+
+```typescript
+const maxH = Math.floor(panelHeight - handleHeight - 120)
+```
+
+为文章区预留至少 120px 可见空间，拖拽上限、生成时自动展开高度、摘要结果到达后的自动弹升高度三处均使用同一公式，杜绝抽屉完全覆盖文章区的情况。
+
+## 本周新增：摘要内容美化
+
+### 12. 摘要正文排版优化
+
+调整摘要结果区正文样式，提升阅读舒适度：
+
+- 正文字号 13.5px，行高 1.8
+- h2 章节标题字号略大于正文，加粗，`letter-spacing: 0.01em`，与正文形成明显层级对比
+- h2 标题上方间距 1.3em，下方 0.45em，视觉节奏更清晰
+
+### 13. h2 标题前语义图标
+
+`renderedAiResult` 计算属性在渲染后的 HTML 中，用正则替换所有 `<h2>` 标签，根据标题文字关键词注入对应 emoji 图标：
+
+| 关键词（含多语言） | 图标 |
+|---|---|
+| 一句话、概览、概要、overview | 💬 |
+| 核心、要点、关键要点、key、takeaway | 📌 |
+| 关键词、keyword、キーワード、키워드 | 🏷️ |
+| 背景、context | 📖 |
+| 结论、conclusion | ✅ |
+| 风险、警告、warning | ⚠️ |
+
+无法匹配的标题使用 `▪` 作为默认前缀。图标通过 `<span class="summary-h2-icon">` 包裹，与标题文字 `gap: 6px` 对齐。
+
+### 14. 关键词胶囊标签
+
+在 `renderedAiResult` 中，用正则识别关键词章节（匹配多语言 h2 标题），将该节段下的 `<p>` 内容按 `；;、,，·` 及空白符切分为独立标签，渲染为胶囊形状的 `<span class="summary-tag">`。
+
+样式使用 `color-mix()` 基于 `--theme-accent` 实现主题自适应：
+
+```css
+background: color-mix(in srgb, var(--theme-accent) 9%, var(--app-surface) 91%);
+border: 1px solid color-mix(in srgb, var(--theme-accent) 35%, transparent 65%);
+color: color-mix(in srgb, var(--theme-accent) 80%, var(--app-text) 20%);
+border-radius: 999px;
+padding: 3px 11px;
+```
+
+### 15. 生成摘要按钮升级
+
+将原 Element Plus `el-button` 替换为自定义 `<button class="summary-generate-btn">`：
+
+- 圆角 10px，高度 36px，`border + inset 阴影 + color-mix 主题色背景`
+- 正常态：sparkle 闪光 SVG 图标（4 条射线 + 中心菱形）
+- 生成中：切换为旋转圆弧 SVG（`stroke-dasharray` 模拟缺口圆），添加 `spin` CSS 动画，文字变为"生成中…"
+- disabled 期间指针 `not-allowed`，透明度降低
+
+### 16. 复制按钮与复制交互
+
+将复制入口从标题栏移至摘要结果卡底部（`.summary-result-footer`），设计为浅描边风格按钮：
+
+- 正常态：复制图标（两个叠置矩形 SVG）+ "复制摘要"文字
+- 点击后：使用 `navigator.clipboard.writeText` 写入剪贴板，图标切换为绿色勾选 SVG，文字变为"已复制"
+- 2 秒后 `copyDone.value = false` 自动复原
+- 复制内容过滤掉可信度行（正则 `/^可信度[：:].+$/gm`）和多余空行
+
+### 17. 标题栏文案与说明
+
+- "AI 摘要"文字改为 `<strong>` 加粗
+- 同行追加说明文字"由 AI 为你总结本篇文章核心内容"（`summary-drawer-desc`），字号 11px，`--el-text-color-secondary`，通过 `summary-drawer-title-wrap` 的 `align-items: baseline` 与标题对齐
+
+### 18. 控制栏 sticky 固定
+
+语言选择 + 生成按钮所在的 `.summary-drawer-controls` 改为 `position: sticky; top: 0; z-index: 1`，背景设为不透明（`color-mix` 混合 `--app-surface-strong`），使抽屉体内容滚动时控制栏始终可见。
+
 ## 本周新增：用量统计可视化
 
-### 12. 用量统计面板重构
+### 19. 用量统计面板重构
 
 将原有纯文字的 LLM 用量统计区域重构为带时序柱状图的可视化面板。
 
@@ -204,7 +282,7 @@ npm run build
 - TOKEN 模式 legend 右对齐（`align: 'end'`）
 - tooltip 在该时间点所有数据集均为 0 时不显示
 
-### 13. 请求异常统计
+### 20. 请求异常统计
 
 **后端数据库：** `ai_results` 表新增 `status TEXT NOT NULL DEFAULT 'success'` 列，通过 `_migrate_ai_tables` migration 自动补列，存量数据默认为 `success`。
 
@@ -214,7 +292,7 @@ npm run build
 
 **前端 tooltip：** 请求次数模式下，`afterBody` 在 `failed_calls > 0` 时追加"请求异常: N (X%)"一行。
 
-### 14. 时区修复
+### 21. 时区修复
 
 **问题：** SQLite `CURRENT_TIMESTAMP` 存的是系统本地时间，但后端原先用 `datetime.now(timezone.utc)` 计算 cutoff，两者时区不一致，导致"今天"范围过滤和小时分桶均偏移 8 小时。
 
@@ -223,7 +301,7 @@ npm run build
 - `stats_timeseries` SQL 分桶表达式通过 Python 计算本地与 UTC 的秒级偏移，以 `datetime(created_at, '+N seconds')` 转换后再 `strftime` 分桶
 - cutoff 格式改为 `%Y-%m-%d %H:%M:%S`（空格分隔），与 SQLite `CURRENT_TIMESTAMP` 输出格式一致
 
-### 15. 摘要生成按钮与圆点动画优化
+### 22. 摘要生成按钮与圆点动画优化
 
 **按钮：** 移除 `:icon="MagicStick"`，只保留"生成摘要"/"重新生成摘要"文字。
 

@@ -352,8 +352,10 @@
           <button type="button" class="summary-drawer-handle" @click="toggleSummaryDrawer" :aria-expanded="summaryDrawerOpen">
             <span class="summary-drawer-handle-label">
               <el-icon class="summary-drawer-icon"><MagicStick /></el-icon>
-              <span>AI 摘要</span>
-              <el-icon v-if="summaryRunning" class="summary-drawer-loading-icon"><Loading /></el-icon>
+              <span class="summary-drawer-title-wrap">
+                <strong>AI 摘要</strong>
+                <span class="summary-drawer-desc">由 AI 为你总结本篇文章核心内容</span>
+              </span>
             </span>
             <span class="summary-drawer-handle-center">
               <span v-if="summaryFailed && !summaryRunning" class="summary-warning summary-warning-inline">摘要生成失败，请重新生成...</span>
@@ -371,14 +373,22 @@
                   <el-option v-for="opt in summaryLanguageOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
                 </el-select>
               </div>
-              <el-button
-                type="primary"
+              <button
+                class="summary-generate-btn"
+                :class="{ loading: summaryRunning }"
                 :disabled="summaryRunning"
-                class="summary-drawer-generate-btn"
                 @click="runSummary"
               >
-                {{ summaryFailed ? '重新生成摘要' : '生成摘要' }}
-              </el-button>
+                <span class="summary-generate-btn-icon">
+                  <svg v-if="!summaryRunning" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 1c.3 0 .54.22.58.51l.01.1L9 4.5a.5.5 0 0 1-.41.49l-.09.01H7.5a.5.5 0 0 1-.1-.99l.1-.01.36-.01-.28-2.49A.58.58 0 0 1 8 1ZM4.22 2.78a.58.58 0 0 1 .76-.07l.08.07 1.77 1.77a.5.5 0 0 1-.63.77l-.07-.06L4.36 3.49a.58.58 0 0 1-.14-.71ZM11.78 2.78c.2.2.23.5.07.73l-.07.08-1.77 1.77a.5.5 0 0 1-.77-.63l.06-.07 1.77-1.77c.22-.22.57-.22.71-.11ZM2.78 4.22c.2-.2.5-.23.73-.07l.08.07 1.77 1.77a.5.5 0 0 1-.63.77l-.07-.06-1.77-1.77a.58.58 0 0 1-.11-.71ZM8 5a3 3 0 1 1 0 6A3 3 0 0 1 8 5Zm5.22-.22c.22.22.22.57.11.71l-.07.08-1.77 1.77a.5.5 0 0 1-.77-.63l.06-.07 1.77-1.77a.58.58 0 0 1 .67-.09ZM1 8c0-.3.22-.54.51-.58l.1-.01 3-.01a.5.5 0 0 1 .09.99l-.09.01H1.61A.58.58 0 0 1 1 8Zm10.41-.59 3-.01a.5.5 0 0 1 .1.99l-.1.01-3 .01a.5.5 0 0 1-.1-.99l.1-.01ZM5.32 10.32a.5.5 0 0 1 .63.77l-.06.07-1.77 1.77a.58.58 0 0 1-.85-.78l.07-.08 1.98-1.75Zm5.36 0 1.98 1.75a.58.58 0 0 1-.71.86l-.08-.07-1.77-1.77a.5.5 0 0 1 .58-.77ZM8 11.5c.3 0 .54.22.58.51l.01.1.01 2.28a.58.58 0 0 1-1.16.07V14.4l-.01-2.28A.58.58 0 0 1 8 11.5Z"/>
+                  </svg>
+                  <svg v-else class="spin" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="28" stroke-dashoffset="10" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                <span>{{ summaryRunning ? '生成中…' : (summaryFailed ? '重新生成' : '生成摘要') }}</span>
+              </button>
             </div>
             <div v-if="summaryRunning && summaryStepItems.length === 0" class="summary-drawer-loading">
               <span class="summary-drawer-loading-dots">摘要生成中，请稍等</span>
@@ -401,8 +411,18 @@
                 </div>
               </div>
             </transition-group>
-            <div v-if="summaryResultVisible" class="summary-drawer-result">
+            <div v-if="summaryResultVisible && !summaryRunning" class="summary-drawer-result">
               <div class="summary-result-body article-body" v-html="renderedAiResult"></div>
+              <div class="summary-result-footer">
+                <button class="summary-copy-btn" :class="{ copied: copyDone }" @click="copySummary">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <rect v-if="!copyDone" x="5" y="5" width="8" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+                    <path v-if="!copyDone" d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                    <path v-else d="M3 8l3.5 3.5L13 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span>{{ copyDone ? '已复制' : '复制摘要' }}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -552,6 +572,15 @@ const summaryFailed = ref(false)
 const summaryStepItems = ref<SummaryThoughtStep[]>([])
 const summaryDrawerRef = ref<HTMLElement | null>(null)
 const summaryResultVisible = ref(false)
+const copyDone = ref(false)
+
+async function copySummary() {
+  if (!aiResult.value) return
+  const text = aiResult.value.replace(/^可信度[：:].+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
+  await navigator.clipboard.writeText(text)
+  copyDone.value = true
+  setTimeout(() => { copyDone.value = false }, 2000)
+}
 
 function onDrawerDragStart(e: MouseEvent) {
   const el = summaryDrawerRef.value
@@ -559,15 +588,22 @@ function onDrawerDragStart(e: MouseEvent) {
   const startY = e.clientY
   const startHeight = summaryDrawerHeight.value
 
+  const panelEl = el.closest('.reader-detail-panel') as HTMLElement | null
+  const handleEl = el.querySelector('.summary-drawer-handle') as HTMLElement | null
+  const panelHeight = panelEl?.clientHeight ?? window.innerHeight
+  const handleHeight = handleEl?.offsetHeight ?? 44
+  // reserve at least 120px for the article scroll area above the drawer
+  const maxHeight = Math.floor(panelHeight - handleHeight - 120)
+
   const body = el.querySelector('.summary-drawer-body') as HTMLElement | null
   if (body) body.style.transition = 'none'
 
   const onMove = (me: MouseEvent) => {
-    const next = Math.min(700, Math.max(120, startHeight + (startY - me.clientY)))
+    const next = Math.min(maxHeight, Math.max(120, startHeight + (startY - me.clientY)))
     el.style.setProperty('--drawer-height', `${next}px`)
   }
   const onUp = (me: MouseEvent) => {
-    const next = Math.min(700, Math.max(120, startHeight + (startY - me.clientY)))
+    const next = Math.min(maxHeight, Math.max(120, startHeight + (startY - me.clientY)))
     summaryDrawerHeight.value = next
     if (body) body.style.transition = ''
     window.removeEventListener('mousemove', onMove)
@@ -661,7 +697,39 @@ const currentListTitle = computed(() => {
 const renderedAiResult = computed(() => {
   if (!aiResult.value) return ''
   const cleaned = aiResult.value.replace(/^可信度[：:].+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
-  return markdownToHtml(cleaned)
+  let html = markdownToHtml(cleaned)
+
+  // h2 加图标
+  const h2Icons: Record<string, string> = {
+    // 中文
+    '一句话': '💬', '概览': '💬', '概要': '💬',
+    '核心': '📌', '要点': '📌', '关键要点': '📌', '重要': '📌',
+    '关键词': '🏷️', '키워드': '🏷️', 'キーワード': '🏷️', 'mots-clés': '🏷️', 'schlüssel': '🏷️', 'palabras': '🏷️', 'palavras': '🏷️', 'ключев': '🏷️', 'الكلمات': '🏷️',
+    '背景': '📖', '结论': '✅', '风险': '⚠️', '建议': '💡',
+    '追踪': '🔍', '继续': '🔍',
+    // 英文及其他语言通用词
+    'overview': '💬', 'résumé': '💬', 'zusammenfassung': '💬', 'resumen': '💬', 'resumo': '💬', 'резюме': '💬', 'ملخص': '💬', '요약': '💬',
+    'key': '📌', 'takeaway': '📌', 'puntos': '📌', 'points': '📌', 'wichtig': '📌', 'моменты': '📌', 'النقاط': '📌', '포인트': '📌', 'ポイント': '📌',
+    'keyword': '🏷️',
+    'background': '📖', 'contexte': '📖', 'hintergrund': '📖', 'contexto': '📖', 'контекст': '📖', 'الخلفية': '📖', '배경': '📖', '背景': '📖',
+    'follow': '🔍', 'suivre': '🔍', 'verfolgung': '🔍', 'acompanhar': '🔍', 'следить': '🔍', '追う': '🔍', '추적': '🔍',
+  }
+  html = html.replace(/<h2>(.*?)<\/h2>/g, (_, text) => {
+    const icon = Object.entries(h2Icons).find(([k]) => text.toLowerCase().includes(k))?.[1] ?? '▪'
+    return `<h2><span class="summary-h2-icon">${icon}</span>${text}</h2>`
+  })
+
+  // 关键词段落转标签：跟在含各语言"关键词"的 h2 后面的 <p>
+  html = html.replace(
+    /(<h2>(?:(?!<\/h2>).)*(?:关键词|keyword|キーワード|키워드|mots-clés|schlüsselwörter|palabras\sclave|palavras-chave|ключевые\sслова|الكلمات\sالمفتاحية)(?:(?!<\/h2>).)*<\/h2>)\s*<p>([\s\S]*?)<\/p>/i,
+    (_, h2, content) => {
+      const tags = content.split(/[；;、,，·\s]+/).map((t: string) => t.trim()).filter(Boolean)
+      const tagHtml = tags.map((t: string) => `<span class="summary-tag">${t}</span>`).join('')
+      return `${h2}<div class="summary-tags">${tagHtml}</div>`
+    }
+  )
+
+  return html
 })
 
 const summaryIncomplete = computed(() => {
@@ -1371,7 +1439,9 @@ async function runSummary() {
   if (summaryDrawerHeight.value < MIN_RUNNING_HEIGHT) {
     const panelEl = summaryDrawerRef.value?.closest('.reader-detail-panel') as HTMLElement | null
     const panelHeight = panelEl?.clientHeight ?? window.innerHeight
-    summaryDrawerHeight.value = Math.min(panelHeight - 60, Math.max(MIN_RUNNING_HEIGHT, summaryDrawerHeight.value))
+    const handleH = (summaryDrawerRef.value?.querySelector('.summary-drawer-handle') as HTMLElement | null)?.offsetHeight ?? 44
+    const maxH = Math.floor(panelHeight - handleH - 120)
+    summaryDrawerHeight.value = Math.min(maxH, Math.max(MIN_RUNNING_HEIGHT, summaryDrawerHeight.value))
     summaryDrawerRef.value?.style.setProperty('--drawer-height', `${summaryDrawerHeight.value}px`)
   }
   try {
@@ -1407,8 +1477,13 @@ function handleSummaryStreamEvent(event: SummaryStreamEvent) {
     summaryUsage.value = usage
     if (!summaryResultVisible.value) {
       const panelEl = summaryDrawerRef.value?.closest('.reader-detail-panel') as HTMLElement | null
-      const targetHeight = Math.round((panelEl?.clientHeight ?? window.innerHeight) / 3)
-      summaryDrawerHeight.value = Math.min(700, Math.max(120, targetHeight))
+      const panelH = panelEl?.clientHeight ?? window.innerHeight
+      const handleH = (summaryDrawerRef.value?.querySelector('.summary-drawer-handle') as HTMLElement | null)?.offsetHeight ?? 44
+      const maxH = Math.floor(panelH - handleH - 120)
+      const targetHeight = Math.round(panelH / 3)
+      if (summaryDrawerHeight.value < targetHeight) {
+        summaryDrawerHeight.value = Math.min(maxH, Math.max(120, targetHeight))
+      }
     }
     summaryResultVisible.value = true
     summaryStepItems.value = []
@@ -2018,9 +2093,84 @@ async function exportNote() {
 }
 
 .summary-result-body {
-  white-space: pre-wrap;
-  line-height: 1.7;
+  font-size: 13.5px;
+  line-height: 1.8;
+  color: var(--app-text);
 }
+
+.summary-result-body :deep(h1) {
+  font-size: 1.05em;
+  font-weight: 700;
+  margin: 1em 0 0.4em;
+}
+
+.summary-result-body :deep(h2) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.35em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin: 1.3em 0 0.45em;
+  padding: 0;
+  border-left: none;
+  color: var(--app-text);
+}
+
+.summary-result-body :deep(h3) {
+  font-size: 0.88em;
+  font-weight: 600;
+  margin: 0.9em 0 0.3em;
+  color: color-mix(in srgb, var(--app-text) 85%, transparent 15%);
+}
+
+.summary-result-body :deep(p) {
+  margin: 0 0 0.75em;
+  line-height: 1.8;
+  color: color-mix(in srgb, var(--app-text) 88%, transparent 12%);
+}
+
+.summary-result-body :deep(.summary-h2-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--theme-accent) 12%, var(--app-surface) 88%);
+  flex-shrink: 0;
+}
+
+.summary-result-body :deep(.summary-tags) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0 14px;
+}
+
+.summary-result-body :deep(.summary-tag) {
+  display: inline-block;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  background: color-mix(in srgb, var(--theme-accent) 9%, var(--app-surface) 91%);
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 35%, transparent 65%);
+  color: color-mix(in srgb, var(--theme-accent) 80%, var(--app-text) 20%);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.summary-result-body :deep(li) {
+  line-height: 1.75;
+  color: color-mix(in srgb, var(--app-text) 88%, transparent 12%);
+}
+
+.summary-result-body :deep(li + li) { margin-top: 5px; }
+
+.summary-result-body :deep(ul),
+.summary-result-body :deep(ol) { padding-left: 1.4em; margin: 0 0 0.9em; }
 
 .article-list-header {
   display: flex;
@@ -2620,10 +2770,23 @@ async function exportNote() {
   gap: 8px;
 }
 
+.summary-drawer-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.summary-drawer-desc {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+
 .summary-drawer-handle-center {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-left: 50px;
 }
 
 .summary-drawer-handle-label-text {
@@ -2675,8 +2838,9 @@ async function exportNote() {
 
 .summary-drawer.expanded .summary-drawer-body {
   height: var(--drawer-height, 320px);
-  padding: 0 18px 16px;
+  padding: 0 18px 32px;
   overflow-y: auto;
+  scroll-padding-bottom: 32px;
 }
 
 .summary-drawer-controls {
@@ -2684,9 +2848,13 @@ async function exportNote() {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding-bottom: 12px;
+  padding: 10px 0 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--app-border) 60%, transparent 40%);
   margin-bottom: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--app-surface-strong) 96%, var(--app-bg) 4%);
 }
 
 .summary-drawer-control-row {
@@ -2703,9 +2871,114 @@ async function exportNote() {
   white-space: nowrap;
 }
 
-.summary-drawer-generate-btn {
-  flex: 0 0 auto;
-  min-width: 110px;
+.summary-generate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 55%, transparent 45%);
+  background: color-mix(in srgb, var(--theme-accent) 10%, var(--app-surface) 90%);
+  color: color-mix(in srgb, var(--theme-accent) 85%, var(--app-text) 15%);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--theme-accent) 18%, transparent 82%),
+              inset 0 1px 0 color-mix(in srgb, white 30%, transparent 70%);
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.1s ease;
+}
+
+.summary-generate-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-accent) 16%, var(--app-surface) 84%);
+  border-color: color-mix(in srgb, var(--theme-accent) 70%, transparent 30%);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--theme-accent) 22%, transparent 78%),
+              inset 0 1px 0 color-mix(in srgb, white 25%, transparent 75%);
+}
+
+.summary-generate-btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-accent) 22%, var(--app-surface) 78%);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--theme-accent) 15%, transparent 85%);
+  transform: translateY(1px);
+}
+
+.summary-generate-btn:disabled {
+  background: color-mix(in srgb, var(--theme-accent) 5%, var(--app-surface) 95%);
+  border-color: color-mix(in srgb, var(--theme-accent) 20%, transparent 80%);
+  color: color-mix(in srgb, var(--theme-accent) 35%, transparent 65%);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.summary-generate-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.summary-generate-btn-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.summary-generate-btn-icon .spin {
+  animation: summary-btn-spin 0.9s linear infinite;
+}
+
+@keyframes summary-btn-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.summary-result-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--app-border) 50%, transparent 50%);
+}
+
+.summary-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: transparent;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.summary-copy-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.summary-copy-btn:hover {
+  background: color-mix(in srgb, var(--app-surface-strong) 80%, var(--app-bg) 20%);
+  border-color: color-mix(in srgb, var(--app-border) 80%, var(--theme-accent) 20%);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--app-text) 8%, transparent 92%);
+}
+
+.summary-copy-btn:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.summary-copy-btn.copied {
+  color: color-mix(in srgb, var(--theme-accent) 85%, black 15%);
+  border-color: color-mix(in srgb, var(--theme-accent) 35%, var(--app-border) 65%);
+  background: color-mix(in srgb, var(--theme-accent) 8%, var(--app-surface) 92%);
 }
 
 .summary-drawer-loading {
@@ -2731,7 +3004,9 @@ async function exportNote() {
 .summary-drawer-stream {
   display: grid;
   gap: 0;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--app-border) 50%, transparent 50%);
 }
 
 .summary-warning {
@@ -2749,6 +3024,10 @@ async function exportNote() {
 
 .summary-drawer-result {
   padding-top: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--app-surface-strong) 60%, var(--app-bg) 40%);
+  border: 1px solid color-mix(in srgb, var(--app-border) 55%, transparent 45%);
 }
 
 .summary-drawer-result-header {

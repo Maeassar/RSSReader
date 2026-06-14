@@ -598,29 +598,106 @@ def _mode_instruction(mode: str, language: str = "zh") -> str:
             "## 关键要点\n- 3-5 条\n"
             "## 关键词\n..."
         )
-    else:
-        if mode == "brief":
-            return (
-                "Please output in the following format:\n"
-                "- Overview: ...\n"
-                "- Key points: up to 3\n"
-                "- Keywords: 3-5"
-            )
-        if mode == "deep":
-            return (
-                "Please output in the following format:\n"
-                "## Overview\n...\n"
-                "## Background\n...\n"
-                "## Key Takeaways\n- 4-6 items\n"
-                "## Worth Following Up\n- 2-4 items\n"
-                "## Keywords\n..."
-            )
+
+    # 非中文语言：用目标语言写标题，让模型直接输出对应语言
+    _heading_translations: dict[str, dict[str, str]] = {
+        "ja": {
+            "overview": "概要",
+            "background": "背景と課題",
+            "takeaways": "重要なポイント",
+            "followup": "続けて追うべき点",
+            "keywords": "キーワード",
+            "output_hint": "以下の形式で出力してください：",
+        },
+        "ko": {
+            "overview": "한 줄 요약",
+            "background": "배경 및 문제",
+            "takeaways": "핵심 요점",
+            "followup": "계속 추적할 내용",
+            "keywords": "키워드",
+            "output_hint": "다음 형식으로 출력하세요：",
+        },
+        "fr": {
+            "overview": "Résumé en une phrase",
+            "background": "Contexte et problème",
+            "takeaways": "Points clés",
+            "followup": "À suivre",
+            "keywords": "Mots-clés",
+            "output_hint": "Veuillez utiliser le format suivant :",
+        },
+        "de": {
+            "overview": "Zusammenfassung",
+            "background": "Hintergrund",
+            "takeaways": "Wichtige Punkte",
+            "followup": "Weitere Verfolgung",
+            "keywords": "Schlüsselwörter",
+            "output_hint": "Bitte verwende folgendes Format:",
+        },
+        "es": {
+            "overview": "Resumen en una frase",
+            "background": "Contexto y problema",
+            "takeaways": "Puntos clave",
+            "followup": "Vale la pena seguir",
+            "keywords": "Palabras clave",
+            "output_hint": "Por favor usa el siguiente formato:",
+        },
+        "pt": {
+            "overview": "Resumo em uma frase",
+            "background": "Contexto e problema",
+            "takeaways": "Pontos principais",
+            "followup": "Vale acompanhar",
+            "keywords": "Palavras-chave",
+            "output_hint": "Por favor use o seguinte formato:",
+        },
+        "ru": {
+            "overview": "Краткое резюме",
+            "background": "Контекст и проблема",
+            "takeaways": "Ключевые моменты",
+            "followup": "Стоит следить",
+            "keywords": "Ключевые слова",
+            "output_hint": "Пожалуйста, используйте следующий формат:",
+        },
+        "ar": {
+            "overview": "ملخص بجملة واحدة",
+            "background": "الخلفية والمشكلة",
+            "takeaways": "النقاط الرئيسية",
+            "followup": "يستحق المتابعة",
+            "keywords": "الكلمات المفتاحية",
+            "output_hint": "يرجى استخدام التنسيق التالي:",
+        },
+    }
+
+    t = _heading_translations.get(language, {
+        "overview": "Overview",
+        "background": "Background",
+        "takeaways": "Key Takeaways",
+        "followup": "Worth Following Up",
+        "keywords": "Keywords",
+        "output_hint": "Please output in the following format:",
+    })
+
+    if mode == "brief":
         return (
-            "Please output in the following format:\n"
-            "## Overview\n...\n"
-            "## Key Takeaways\n- 3-5 items\n"
-            "## Keywords\n..."
+            f"{t['output_hint']}\n"
+            f"- {t['overview']}: ...\n"
+            f"- {t['takeaways']}: up to 3\n"
+            f"- {t['keywords']}: 3-5"
         )
+    if mode == "deep":
+        return (
+            f"{t['output_hint']}\n"
+            f"## {t['overview']}\n...\n"
+            f"## {t['background']}\n...\n"
+            f"## {t['takeaways']}\n- 4-6 items\n"
+            f"## {t['followup']}\n- 2-4 items\n"
+            f"## {t['keywords']}\n..."
+        )
+    return (
+        f"{t['output_hint']}\n"
+        f"## {t['overview']}\n...\n"
+        f"## {t['takeaways']}\n- 3-5 items\n"
+        f"## {t['keywords']}\n..."
+    )
 
 
 def _max_tokens_for_options(options: SummaryOptions) -> int:
