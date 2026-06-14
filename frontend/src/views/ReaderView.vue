@@ -284,8 +284,8 @@
           >
             <template #reference>
               <el-button
-                class="toolbar-icon-button"
-                :class="{ active: notePopoverOpen }"
+                class="toolbar-icon-button note-toolbar-button"
+                :class="{ active: notePopoverOpen, 'has-note': hasCurrentNote }"
                 :icon="EditPen"
                 circle
                 aria-label="笔记"
@@ -668,6 +668,7 @@ const summaryIncomplete = computed(() => {
 })
 
 const summaryClampStyle = computed(() => ({ WebkitLineClamp: String(store.summaryLineCount) }))
+const hasCurrentNote = computed(() => note.value.trim().length > 0)
 const homeSyncResults = computed(() => lastHomeSyncReport.value?.results ?? [])
 const readerShellClass = computed(() => ({
   'sidebar-hidden': viewportWidth.value <= 1220,
@@ -2176,6 +2177,22 @@ function exportNote() {
   --el-button-text-color: color-mix(in srgb, currentColor 88%, #435b84 12%);
   --el-button-hover-bg-color: color-mix(in srgb, var(--theme-accent) 28%, var(--app-surface-strong) 72%);
   --el-button-hover-border-color: color-mix(in srgb, var(--theme-accent) 42%, var(--app-border) 58%);
+}
+
+.note-toolbar-button {
+  position: relative;
+}
+
+.note-toolbar-button.has-note::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--app-surface);
+  border-radius: 999px;
+  background: var(--theme-accent);
 }
 
 .tag-popover-body {
