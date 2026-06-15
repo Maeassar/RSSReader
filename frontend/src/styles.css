@@ -73,12 +73,21 @@ body.theme-dark .app-shell {
 .brand {
   height: 56px;
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: 0 1px 4px color-mix(in srgb, #0f172a 14%, transparent 86%);
 }
 
 .brand strong {
   font-size: 20px;
+  line-height: 1;
 }
 
 .brand span {

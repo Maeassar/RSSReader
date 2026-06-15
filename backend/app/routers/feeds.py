@@ -1,6 +1,16 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas import ArticleRead, FeedCreate, FeedCreateResult, FeedRead, FeedSyncReport, FeedUpdate, OperationResult
+from app.schemas import (
+    ArticleRead,
+    FeedBatchDeleteReport,
+    FeedBatchDeleteRequest,
+    FeedCreate,
+    FeedCreateResult,
+    FeedRead,
+    FeedSyncReport,
+    FeedUpdate,
+    OperationResult,
+)
 from app.services import article_service
 from app.services import feed_service
 
@@ -23,6 +33,11 @@ def create_feed(payload: FeedCreate):
 @router.post("/sync-all", response_model=FeedSyncReport)
 def sync_all_feeds():
     return feed_service.sync_all_feeds()
+
+
+@router.post("/batch-delete", response_model=FeedBatchDeleteReport)
+def batch_delete_feeds(payload: FeedBatchDeleteRequest):
+    return feed_service.delete_feeds(payload.feed_ids)
 
 
 @router.get("/{feed_id}", response_model=FeedRead)

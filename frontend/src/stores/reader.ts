@@ -79,6 +79,7 @@ export const useReaderStore = defineStore('reader', {
     tags: [] as Tag[],
     selectedArticle: null as Article | null,
     loading: false,
+    articleMutationVersion: 0,
     pinnedArticleIds: storedJsonArray(PINNED_ARTICLES_KEY),
     summaryLineCount: storedSummaryLines(),
     showThumbnails: storedBoolean(SHOW_THUMBNAILS_KEY, false),
@@ -93,6 +94,7 @@ export const useReaderStore = defineStore('reader', {
   actions: {
     async loadAll() {
       this.loading = true
+      const articleMutationVersion = this.articleMutationVersion
       try {
         const [feeds, articles, tags] = await Promise.allSettled([rssApi.feeds(), rssApi.articles(), rssApi.tags()])
 
@@ -103,14 +105,20 @@ export const useReaderStore = defineStore('reader', {
         }
 
         if (articles.status === 'fulfilled') {
-          this.articles = sortArticles(
-            articles.value.map((article) => this.applyArticleOverrides(article)),
-            this.pinnedArticleIds,
-            this.articleSortOrder
-          )
+          if (this.articleMutationVersion === articleMutationVersion) {
+            this.articles = sortArticles(
+              articles.value.map((article) => this.applyArticleOverrides(article)),
+              this.pinnedArticleIds,
+              this.articleSortOrder
+            )
+            this.articleMutationVersion += 1
+          } else {
+            this.mergeArticles(articles.value)
+          }
         } else {
           console.error('Failed to load articles', articles.reason)
           this.articles = []
+          this.articleMutationVersion += 1
         }
 
         if (tags.status === 'fulfilled') {
@@ -139,11 +147,46 @@ export const useReaderStore = defineStore('reader', {
         this.pinnedArticleIds,
         this.articleSortOrder
       )
+      this.articleMutationVersion += 1
       if (!this.selectedArticle) {
         this.selectedArticle = this.articles[0] ?? null
         return
       }
       this.selectedArticle = this.articles.find((article) => article.id === this.selectedArticle?.id) ?? this.articles[0] ?? null
+    },
+    mergeArticles(articles: Article[]) {
+      const articleMap = new Map(this.articles.map((article) => [article.id, article]))
+      articles.forEach((article) => {
+        articleMap.set(article.id, this.applyArticleOverrides(article))
+      })
+      this.articles = sortArticles(Array.from(articleMap.values()), this.pinnedArticleIds, this.articleSortOrder)
+      this.articleMutationVersion += 1
+      if (!this.selectedArticle) {
+        this.selectedArticle = this.articles[0] ?? null
+        return
+      }
+      this.selectedArticle = this.articles.find((article) => article.id === this.selectedArticle?.id) ?? this.selectedArticle
+    },
+    async refreshFeedArticles(feedId: number) {
+      const articles = await rssApi.articles({ feed_id: feedId })
+      this.mergeArticles(articles)
+    },
+    upsertFeed(feed: Feed) {
+      const index = this.feeds.findIndex((item) => item.id === feed.id)
+      if (index >= 0) {
+        this.feeds.splice(index, 1, feed)
+        return
+      }
+      this.feeds = [feed, ...this.feeds]
+    },
+    removeFeeds(feedIds: number[]) {
+      const ids = new Set(feedIds)
+      this.feeds = this.feeds.filter((feed) => !ids.has(feed.id))
+      this.articles = this.articles.filter((article) => !ids.has(article.feed_id))
+      this.articleMutationVersion += 1
+      if (this.selectedArticle && ids.has(this.selectedArticle.feed_id)) {
+        this.selectedArticle = this.articles[0] ?? null
+      }
     },
     async toggleRead(article: Article) {
       const updated = await rssApi.markRead(article.id, !article.is_read)

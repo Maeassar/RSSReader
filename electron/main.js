@@ -11,6 +11,14 @@ const isDev = !app.isPackaged && !useBuiltFrontend
 let backendProcess = null
 let apiBaseUrl = process.env.RSSREADER_BACKEND_URL || ''
 
+app.setName('Ripple')
+
+function appIconPath() {
+  return app.isPackaged
+    ? path.join(app.getAppPath(), 'build', 'icon.png')
+    : path.join(__dirname, '..', 'build', 'icon.png')
+}
+
 function settingsFilePath() {
   return path.join(app.getPath('userData'), 'desktop-settings.json')
 }
@@ -245,6 +253,8 @@ async function startBackend() {
 
 async function createWindow() {
   const mainWindow = new BrowserWindow({
+    title: 'Ripple',
+    icon: appIconPath(),
     width: 1280,
     height: 820,
     minWidth: 960,

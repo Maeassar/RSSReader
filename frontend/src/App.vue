@@ -1,8 +1,9 @@
 <template>
   <el-container class="app-shell" :class="{ 'reader-shell-layout': isReaderRoute }">
     <el-header class="top-nav">
-      <div class="brand" style="display: flex; align-items: center; gap: 4px">
-        <strong>RSSReader</strong>
+      <div class="brand">
+        <img class="brand-logo" src="/ripple-logo.png" alt="" />
+        <strong>Ripple</strong>
       </div>
       <div class="top-actions">
         <el-tooltip content="阅读" placement="bottom">

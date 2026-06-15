@@ -278,15 +278,24 @@ class SQLiteRepository:
             conn.execute(f"UPDATE entries SET {key} = ? WHERE id = ?", (1 if value else 0, article_id))
         return self.get_article(article_id)
 
-    def list_logs(self):
+    def list_logs(self, range: str | None = None):
+        cutoff = self._range_cutoff(range)
+        conditions = []
+        params = []
+        if cutoff:
+            conditions.append("feed_fetch_logs.fetched_at >= ?")
+            params.append(cutoff)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         with get_connection() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT feed_fetch_logs.*, feeds.title AS feed_title
                 FROM feed_fetch_logs
                 LEFT JOIN feeds ON feeds.id = feed_fetch_logs.feed_id
+                {where}
                 ORDER BY fetched_at DESC
-                """
+                """,
+                params,
             ).fetchall()
         return [
             {

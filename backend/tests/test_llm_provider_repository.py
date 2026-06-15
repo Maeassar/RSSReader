@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 
 
 class LLMProviderRepositoryTest(unittest.TestCase):
@@ -77,6 +78,34 @@ class LLMProviderRepositoryTest(unittest.TestCase):
         self.assertEqual(stats["output_tokens"], 12)
         self.assertEqual(stats["by_feature"][0]["name"], "summary")
         self.assertEqual(stats["by_provider"][0]["provider"], "Local Ollama")
+
+    def test_sync_logs_can_be_filtered_by_range(self):
+        today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+
+        import app.database as database
+
+        with database.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO feed_fetch_logs (feed_id, url, status, message, fetched_at)
+                VALUES (1, 'https://example.com/feed.xml', 'success', 'today log', ?)
+                """,
+                (today,),
+            )
+            conn.execute(
+                """
+                INSERT INTO feed_fetch_logs (feed_id, url, status, message, fetched_at)
+                VALUES (1, 'https://example.com/feed.xml', 'success', 'old log', ?)
+                """,
+                (yesterday,),
+            )
+
+        today_logs = self.repository.list_logs("today")
+        all_logs = self.repository.list_logs("all")
+
+        self.assertEqual([log["message"] for log in today_logs], ["today log"])
+        self.assertEqual({log["message"] for log in all_logs}, {"today log", "old log"})
 
 
 if __name__ == "__main__":

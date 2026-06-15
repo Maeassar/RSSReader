@@ -38,6 +38,50 @@ def delete_feed(feed_id):
     repository.delete_feed(feed_id)
 
 
+def delete_feeds(feed_ids):
+    results = []
+    seen_feed_ids = set()
+    for feed_id in feed_ids:
+        if feed_id in seen_feed_ids:
+            results.append(
+                {
+                    "feed_id": feed_id,
+                    "status": "skipped",
+                    "message": "Duplicate feed id in request.",
+                }
+            )
+            continue
+
+        seen_feed_ids.add(feed_id)
+        try:
+            repository.delete_feed(feed_id)
+        except ValueError as exc:
+            results.append(
+                {
+                    "feed_id": feed_id,
+                    "status": "failed",
+                    "message": str(exc),
+                }
+            )
+            continue
+
+        results.append(
+            {
+                "feed_id": feed_id,
+                "status": "success",
+                "message": "Feed deleted.",
+            }
+        )
+
+    return {
+        "total": len(results),
+        "success": sum(1 for item in results if item["status"] == "success"),
+        "failed": sum(1 for item in results if item["status"] == "failed"),
+        "skipped": sum(1 for item in results if item["status"] == "skipped"),
+        "results": results,
+    }
+
+
 def sync_feed(feed_id):
     return repository.sync_feed(feed_id)
 

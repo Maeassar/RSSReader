@@ -711,7 +711,7 @@ const renderedAiResult = computed(() => {
     'overview': '💬', 'résumé': '💬', 'zusammenfassung': '💬', 'resumen': '💬', 'resumo': '💬', 'резюме': '💬', 'ملخص': '💬', '요약': '💬',
     'key': '📌', 'takeaway': '📌', 'puntos': '📌', 'points': '📌', 'wichtig': '📌', 'моменты': '📌', 'النقاط': '📌', '포인트': '📌', 'ポイント': '📌',
     'keyword': '🏷️',
-    'background': '📖', 'contexte': '📖', 'hintergrund': '📖', 'contexto': '📖', 'контекст': '📖', 'الخلفية': '📖', '배경': '📖', '背景': '📖',
+    'background': '📖', 'contexte': '📖', 'hintergrund': '📖', 'contexto': '📖', 'контекст': '📖', 'الخلفية': '📖', '배경': '📖',
     'follow': '🔍', 'suivre': '🔍', 'verfolgung': '🔍', 'acompanhar': '🔍', 'следить': '🔍', '追う': '🔍', '추적': '🔍',
   }
   html = html.replace(/<h2>(.*?)<\/h2>/g, (_, text) => {
@@ -839,8 +839,10 @@ function handleWindowResize() {
   viewportWidth.value = window.innerWidth
 }
 
-async function handleFeedManagerChanged() {
-  await store.loadAll()
+async function handleFeedManagerChanged(options?: { reload?: boolean }) {
+  if (options?.reload !== false) {
+    await store.loadAll()
+  }
   await loadNote()
   if (activeFeedId.value !== null && !store.feeds.some((feed) => feed.id === activeFeedId.value)) {
     activeFeedId.value = null

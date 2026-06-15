@@ -215,7 +215,7 @@ class MockRepository:
         self.ai_results.append(item)
         return deepcopy(item)
 
-    def list_logs(self):
+    def list_logs(self, range_=None):
         return deepcopy(self.sync_logs)
 
     def log_feed_event(self, feed_id, url, status, message):

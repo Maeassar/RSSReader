@@ -17,10 +17,10 @@
                 v-for="opt in rangeOptions"
                 :key="opt.value"
                 class="range-tab"
-                :class="{ active: selectedRange === opt.value }"
-                @click="selectRange(opt.value)"
+                :class="{ active: trafficRange === opt.value }"
+                @click="selectTrafficRange(opt.value)"
               >{{ opt.label }}</button>
-              <el-button :icon="Refresh" text @click="loadAll" />
+              <el-button :icon="Refresh" text @click="loadTrafficStats" />
             </div>
             <div class="chart-mode-toggle">
               <button :class="{ active: chartMode === 'calls' }" @click="chartMode = 'calls'">请求次数</button>
@@ -50,28 +50,41 @@
       </section>
       <section class="panel stats-log-panel">
         <div class="stats-panel-head">
-          <h2>同步日志</h2>
-          <p class="muted">最近的同步记录与结果</p>
+          <div>
+            <h2>同步日志</h2>
+            <p class="muted">{{ logRangeLabel }}的同步记录与结果</p>
+          </div>
+          <div class="stats-range-tabs compact">
+            <button
+              v-for="opt in rangeOptions"
+              :key="`logs-${opt.value}`"
+              class="range-tab"
+              :class="{ active: logRange === opt.value }"
+              @click="selectLogRange(opt.value)"
+            >{{ opt.label }}</button>
+          </div>
         </div>
-        <el-empty v-if="!logs.length" description="还没有同步日志" />
-        <el-timeline v-else class="stats-timeline">
-          <el-timeline-item
-            v-for="log in logs"
-            :key="log.id"
-            :timestamp="formatLogTime(log.created_at)"
-            :type="statusTagType(log.status)"
-          >
-            <div class="stats-log-item">
-              <div class="stats-log-main">
-                <div class="stats-log-title">{{ log.feed_title || log.url || '未关联订阅源' }}</div>
-                <div v-if="log.url" class="stats-log-url">{{ log.url }}</div>
-                <div class="stats-log-message">{{ log.message }}</div>
-                <div v-if="log.status === 'failed'" class="stats-log-suggestion">{{ syncSuggestion(log.message) }}</div>
+        <div class="stats-log-scroll">
+          <el-empty v-if="!logs.length" description="还没有同步日志" />
+          <el-timeline v-else class="stats-timeline">
+            <el-timeline-item
+              v-for="log in logs"
+              :key="log.id"
+              :timestamp="formatLogTime(log.created_at)"
+              :type="statusTagType(log.status)"
+            >
+              <div class="stats-log-item">
+                <div class="stats-log-main">
+                  <div class="stats-log-title">{{ log.feed_title || log.url || '未关联订阅源' }}</div>
+                  <div v-if="log.url" class="stats-log-url">{{ log.url }}</div>
+                  <div class="stats-log-message">{{ log.message }}</div>
+                  <div v-if="log.status === 'failed'" class="stats-log-suggestion">{{ syncSuggestion(log.message) }}</div>
+                </div>
+                <div class="stats-log-status" :class="log.status">{{ statusLabel(log.status) }}</div>
               </div>
-              <div class="stats-log-status" :class="log.status">{{ statusLabel(log.status) }}</div>
-            </div>
-          </el-timeline-item>
-        </el-timeline>
+            </el-timeline-item>
+          </el-timeline>
+        </div>
       </section>
     </div>
   </div>
@@ -89,7 +102,8 @@ import { statusTagType, syncSuggestion } from '../utils/syncDiagnostics'
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
 const collapsed = ref(false)
-const selectedRange = ref<StatsRange>('today')
+const trafficRange = ref<StatsRange>('today')
+const logRange = ref<StatsRange>('today')
 const chartMode = ref<'calls' | 'tokens'>('calls')
 const stats = ref<Record<string, any>>({})
 const timeseries = ref<LLMTimeseriesBucket[]>([])
@@ -103,24 +117,33 @@ const rangeOptions: { label: string; value: StatsRange }[] = [
 ]
 
 async function loadStats() {
-  stats.value = await rssApi.llmStats(selectedRange.value)
+  stats.value = await rssApi.llmStats(trafficRange.value)
 }
 async function loadTimeseries() {
-  timeseries.value = await rssApi.llmTimeseries(selectedRange.value)
+  timeseries.value = await rssApi.llmTimeseries(trafficRange.value)
+}
+async function loadTrafficStats() {
+  await Promise.all([loadStats(), loadTimeseries()])
 }
 async function loadAll() {
-  await Promise.all([loadStats(), loadTimeseries(), loadSyncLogs()])
+  await Promise.all([loadTrafficStats(), loadSyncLogs()])
 }
 async function loadSyncLogs() {
-  logs.value = await rssApi.syncLogs()
+  logs.value = await rssApi.syncLogs(logRange.value)
 }
-function selectRange(range: StatsRange) {
-  selectedRange.value = range
+function selectTrafficRange(range: StatsRange) {
+  trafficRange.value = range
+}
+function selectLogRange(range: StatsRange) {
+  logRange.value = range
 }
 
-watch(selectedRange, () => {
-  loadStats()
-  loadTimeseries()
+watch(trafficRange, () => {
+  loadTrafficStats()
+})
+
+watch(logRange, () => {
+  loadSyncLogs()
 })
 
 onMounted(loadAll)
@@ -130,6 +153,8 @@ function formatTokens(n: number | undefined): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
   return String(n)
 }
+
+const logRangeLabel = computed(() => rangeOptions.find((opt) => opt.value === logRange.value)?.label ?? '全部')
 
 const chartData = computed(() => {
   const labels = timeseries.value.map((b) => b.time_label)
@@ -213,7 +238,7 @@ const chartOptions = computed(() => ({
       ticks: {
         font: { size: 11 },
         color: '#9ca3af',
-        maxTicksLimit: selectedRange.value === 'today' ? 8 : undefined,
+        maxTicksLimit: trafficRange.value === 'today' ? 8 : undefined,
       },
     },
     y: {
@@ -286,6 +311,15 @@ function statusLabel(status: string) {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.stats-range-tabs.compact {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.stats-range-tabs.compact .range-tab {
+  padding: 3px 10px;
 }
 
 .range-tab {
@@ -368,6 +402,14 @@ function statusLabel(status: string) {
   border-radius: 20px;
 }
 
+.stats-log-scroll {
+  max-height: min(560px, calc(100vh - 360px));
+  min-height: 220px;
+  overflow-y: auto;
+  padding: 6px 8px 0 0;
+  scrollbar-gutter: stable;
+}
+
 .stats-panel-head h2 {
   margin: 0 0 4px;
   font-size: 20px;
@@ -437,6 +479,10 @@ function statusLabel(status: string) {
 
   .stats-cards {
     grid-template-columns: 1fr;
+  }
+
+  .stats-log-scroll {
+    max-height: 420px;
   }
 }
 </style>

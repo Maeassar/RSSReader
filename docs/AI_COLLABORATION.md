@@ -331,3 +331,67 @@
 - 更新 `update_docs/Week14_batch_export_plan.md`，记录 Week16 UI 改版后的恢复内容；同步扩展 `update_docs/Week16_specia1week.md`。
 - 当日验证：执行 `cd backend && python -m py_compile app/schemas/rss.py app/services/export_service.py app/routers/export.py` 通过；执行 `cd frontend && npm run build`，构建通过；Vite/Rollup 仍仅输出第三方依赖注释和 chunk size 警告。
 - 当前限制：本次未新增自动化 UI 测试；仍不支持自定义 digest 模板、固定导出目录设置，也不会在导出流程中自动生成缺失摘要。
+
+## 2026-06-15（OPML 导入逐条显示）
+
+- 使用 AI Coding Agent 协助优化批量上传 Feed 的前端反馈流程。
+- 后端新增 `POST /api/opml/import/stream` SSE 接口，复用 OPML 导入逻辑，在每个 Feed 处理完成后立即推送单条导入结果和当前汇总。
+- 前端订阅管理页改为监听流式导入事件，收到 `imported` 或 `partial` 结果时立即把对应 Feed 合并到订阅列表，同时逐条更新 OPML 导入结果表。
+- 保留原有 `POST /api/opml/import` 汇总接口，降低对旧调用方的影响。
+- 当前限制：本次未新增端到端 UI 自动化测试；最终仍会在导入结束后重新加载一次 Feed 列表，用于和后端状态对齐。
+
+## 2026-06-15（订阅批量删除）
+
+- 使用 AI Coding Agent 协助补充订阅管理页的批量删除功能。
+- 后端新增 `POST /api/feeds/batch-delete` 接口，接收 `feed_ids` 列表并返回逐条删除结果汇总；单个 Feed 删除失败或重复 ID 不会中断整批操作。
+- 前端订阅管理页在现有多选、全选、清空能力基础上新增“删除选中”按钮，并通过确认弹窗降低误删风险。
+- 删除完成后前端会刷新订阅列表、清空当前选择，并按成功、失败、跳过数量给出反馈。
+- 当前限制：本次未新增端到端 UI 自动化测试；批量删除仍复用现有单个 Feed 删除逻辑和数据库级联清理能力。
+
+## 2026-06-15（OPML 导入排队状态）
+
+- 使用 AI Coding Agent 继续修复 OPML 批量导入体验。
+- 后端流式导入接口改为先解析上传文件并推送 `parsed` 事件，前端收到后立即显示所有待导入订阅为 `pending` 状态。
+- 前端新增本地 OPML 预解析：用户选中文件后先用浏览器解析 OPML 并立即把所有 Feed 显示为“待同步”，后端流式事件随后逐行覆盖最终状态。
+- 后端随后逐个导入和同步 Feed，每完成一个就推送该行最终状态；前端按文件名和 URL 替换对应行，并在成功或部分成功时立即通知阅读页刷新订阅列表。
+- 前端新增共享 OPML 导入进度 store，导入过程中切换页面再回到订阅管理页时仍保留当前结果表和状态。
+- 阅读页 store 新增 Feed 即时 upsert/remove 能力，OPML 导入成功、手动添加、同步和删除订阅后，阅读界面订阅源列表会立即更新。
+- OPML 解析器补充兼容 `feedUrl`、`rssUrl`、`atomUrl`、`url`、`href` 以及文本本身是 URL 的常见导出格式，避免出现文件有效但结果表为空。
+- 当前限制：本次未新增端到端 UI 自动化测试；如果 OPML 文件本身不包含可识别 Feed URL，会以失败行提示而不是静默显示 0 条。
+
+## 2026-06-15（OPML 导入文章即时可读）
+
+- 使用 AI Coding Agent 继续修复 OPML 导入后的阅读状态刷新问题。
+- 阅读页 store 新增按 Feed 合并文章与刷新单个 Feed 文章的能力，避免导入成功后侧边栏只显示订阅源、文章计数仍为 0。
+- OPML 流式导入每收到一个成功或部分成功的 Feed 后，前端会立即把该 Feed 插入订阅列表，并异步拉取该 Feed 的文章合并到阅读页文章池。
+- 手动添加订阅和单个订阅同步也接入同样的文章刷新路径，减少需要重启或整页重载才能看到文章的情况。
+- 修复 OPML 逐条导入期间的全量刷新竞态：单条完成时不再触发父组件 `loadAll()` 覆盖文章池，`loadAll()` 返回时如果检测到期间已有文章合并，会改为合并而不是替换。
+- OPML 上传初始状态文案改为“上传中”，原因改为“正在上传”，后端 `parsed` 事件和前端本地预解析保持一致。
+- OPML 导入流结束后会主动执行一次阅读 store 全量加载，用后端最终文章状态对齐侧边栏计数和文章列表，避免早完成 Feed 仍显示 0 并需要重启。
+- 为满足“每完成一个同步就更新在前端”的严格要求，OPML 单条 SSE 结果现在会携带该 Feed 同步后读取到的文章列表；前端收到单条 `item` 事件后直接把文章合并进阅读 store，不再依赖额外 `/articles?feed_id=...` 请求的异步时序。
+- 当前限制：本次仍未新增端到端 UI 自动化测试；文章即时刷新依赖后端同步完成后 `/api/articles?feed_id=...` 能返回该 Feed 的文章。
+
+## 2026-06-15（同步日志时间范围过滤）
+
+- 使用 AI Coding Agent 为统计日志页的同步日志补充时间范围过滤。
+- 后端 `GET /api/logs/sync` 新增 `range` 查询参数，支持与 LLM 流量统计一致的 `today`、`week`、`month`、`all` 范围。
+- SQLite repository 的同步日志查询复用现有统计 cutoff 逻辑，按 `feed_fetch_logs.fetched_at` 过滤后再倒序返回。
+- 前端统计页的同步日志加载会跟随当前范围切换，并在同步日志面板内提供同样的“今天 / 本周 / 本月 / 全部”切换入口。
+- 新增 repository 测试覆盖同步日志 `today` 与 `all` 过滤结果；当前限制是同步日志仍为列表视图，暂未增加按天分组或图表。
+- 后续根据反馈将流量统计范围与同步日志范围拆分为两个独立状态，二者不再联动；同步日志列表改为面板内固定高度滚动，避免日志过多时无限拉长页面。
+
+## 2026-06-15（OPML 导入文章刷新竞态修复）
+
+- 使用 AI Coding Agent 继续定位 OPML 逐条导入时只有最后完成的 Feed 能即时显示文章的问题。
+- 根因是每条导入成功后虽然会刷新单个 Feed 的文章，但同时触发父级阅读页全量 `loadAll()`，导致刚合并进阅读状态的文章被默认文章列表覆盖，异步时序下最后完成的 Feed 最容易保留下来。
+- 订阅管理页现在会收集每个成功导入 Feed 的文章刷新任务，并在导入流结束前等待这些刷新完成；同时通过 `changed` 事件告诉父级不再进行全量 reload。
+- 阅读页 `handleFeedManagerChanged` 支持轻量刷新模式，避免 OPML 导入期间反复覆盖文章池。
+- OPML 初始 pending 行的状态文案改为“上传中”，原因改为“正在上传”，并在本地预解析和后端 `parsed` 事件两条路径中保持一致。
+
+## 2026-06-15 (Ripple branding and installer icon)
+
+- Used AI Coding Agent to update the desktop and frontend branding from RSSReader to Ripple.
+- Generated `build/icon.ico`, `build/icon.png`, and `frontend/public/ripple-logo.png` from `docs/brand/ripple-logo-concept.png`.
+- Updated Electron Builder metadata so packaged desktop builds use `productName: Ripple` and the NSIS installer/uninstaller use `build/icon.ico`.
+- Updated the Electron window title/name/icon and frontend title, favicon, header logo, and i18n app name to Ripple.
+- Verification: frontend type check passed; frontend build passed with existing Vite/Rollup warnings; a lightweight Electron Builder directory package produced `Ripple.exe` and was cleaned afterward.

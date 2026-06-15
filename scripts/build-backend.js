@@ -4,10 +4,15 @@ const path = require('path')
 const rootDir = path.resolve(__dirname, '..')
 const separator = process.platform === 'win32' ? ';' : ':'
 const executableName = process.platform === 'win32' ? 'RSSReaderBackend.exe' : 'RSSReaderBackend'
-const venvPython = process.platform === 'win32'
-  ? path.join(rootDir, '.venv', 'Scripts', 'python.exe')
-  : path.join(rootDir, '.venv', 'bin', 'python')
-const pythonCommand = require('fs').existsSync(venvPython) ? venvPython : 'python'
+const fs = require('fs')
+const venvNames = ['.venv1', '.venv']
+const pythonCommand = venvNames
+  .map((venvName) => process.platform === 'win32'
+    ? path.join(rootDir, venvName, 'Scripts', 'python.exe')
+    : path.join(rootDir, venvName, 'bin', 'python'))
+  .find((pythonPath) => fs.existsSync(pythonPath)) || 'python'
+
+console.log(`Using Python for backend build: ${pythonCommand}`)
 
 const result = spawnSync(
   pythonCommand,

@@ -193,6 +193,20 @@ export interface FeedSyncReport {
   results: FeedSyncItem[]
 }
 
+export interface FeedBatchDeleteItem {
+  feed_id: number
+  status: 'success' | 'failed' | 'skipped'
+  message: string
+}
+
+export interface FeedBatchDeleteReport {
+  total: number
+  success: number
+  failed: number
+  skipped: number
+  results: FeedBatchDeleteItem[]
+}
+
 export interface FeedCreateResult {
   status: 'success' | 'partial'
   message: string
@@ -202,9 +216,10 @@ export interface FeedCreateResult {
 export interface OPMLImportItem {
   url?: string | null
   title?: string
-  status: 'imported' | 'partial' | 'skipped' | 'failed'
+  status: 'pending' | 'imported' | 'partial' | 'skipped' | 'failed'
   message: string
   feed?: Feed | null
+  articles?: Article[]
   source_file?: string
 }
 
@@ -216,6 +231,13 @@ export interface OPMLImportReport {
   skipped: number
   failed: number
   results: OPMLImportItem[]
+}
+
+export interface OPMLImportStreamEvent {
+  type: 'parsed' | 'item' | 'done'
+  items?: OPMLImportItem[]
+  item?: OPMLImportItem
+  report: OPMLImportReport
 }
 
 export interface LLMTimeseriesBucket {
@@ -258,6 +280,8 @@ export const rssApi = {
   feeds: () => api.get<Feed[]>('/feeds').then((res) => res.data),
   createFeed: (payload: { title?: string; url: string }) => api.post<FeedCreateResult>('/feeds', payload, { timeout: 60000 }).then((res) => res.data),
   deleteFeed: (id: number) => api.delete<OperationResult>(`/feeds/${id}`).then((res) => res.data),
+  deleteFeeds: (feedIds: number[]) =>
+    api.post<FeedBatchDeleteReport>('/feeds/batch-delete', { feed_ids: feedIds }).then((res) => res.data),
   syncFeed: (id: number) => api.post<Feed>(`/feeds/${id}/sync`, null, { timeout: 60000 }).then((res) => res.data),
   syncAll: () => api.post<FeedSyncReport>('/feeds/sync-all', null, { timeout: 120000 }).then((res) => res.data),
   importOpml: (input: File | File[]) => {
@@ -265,6 +289,12 @@ export const rssApi = {
     const formData = new FormData()
     files.forEach((file) => formData.append('files', file))
     return api.post<OPMLImportReport>('/opml/import', formData, { timeout: 120000 }).then((res) => res.data)
+  },
+  importOpmlStream: (input: File | File[], onEvent: (event: OPMLImportStreamEvent) => void) => {
+    const files = Array.isArray(input) ? input : [input]
+    const formData = new FormData()
+    files.forEach((file) => formData.append('files', file))
+    return streamFormDataSse<OPMLImportStreamEvent>(`${apiBaseUrl}/opml/import/stream`, formData, onEvent)
   },
   exportOpml: (feedIds?: number[]) => {
     const params = new URLSearchParams()
@@ -308,7 +338,8 @@ export const rssApi = {
     api.get('/stats/llm', { params: range ? { range } : {} }).then((res) => res.data),
   llmTimeseries: (range: StatsRange = 'today') =>
     api.get<LLMTimeseriesBucket[]>('/stats/llm/timeseries', { params: { range } }).then((res) => res.data),
-  syncLogs: () => api.get<SyncLog[]>('/logs/sync').then((res) => res.data),
+  syncLogs: (range?: StatsRange) =>
+    api.get<SyncLog[]>('/logs/sync', { params: range ? { range } : {} }).then((res) => res.data),
   search: (q: string, limit = 50) =>
     api.get<SearchResult[]>('/search', { params: { q, limit } }).then((res) => res.data),
   ragAsk: (question: string) =>
@@ -324,6 +355,18 @@ export const rssApi = {
   
 }
 
+async function streamFormDataSse<T>(url: string, formData: FormData, onEvent: (event: T) => void) {
+  const response = await fetch(url, {
+    method: 'POST',
+    body: formData
+  })
+  if (!response.ok || !response.body) {
+    throw new Error(await fetchErrorMessage(response))
+  }
+
+  await readSseResponse(response, onEvent)
+}
+
 async function streamSse<T>(url: string, payload: unknown, onEvent: (event: T) => void) {
   const response = await fetch(url, {
     method: 'POST',
@@ -334,7 +377,11 @@ async function streamSse<T>(url: string, payload: unknown, onEvent: (event: T) =
     throw new Error(await fetchErrorMessage(response))
   }
 
-  const reader = response.body.getReader()
+  await readSseResponse(response, onEvent)
+}
+
+async function readSseResponse<T>(response: Response, onEvent: (event: T) => void) {
+  const reader = response.body!.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
 

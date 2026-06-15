@@ -53,23 +53,22 @@ class FeedSyncReport(BaseModel):
     results: list[FeedSyncItem] = Field(default_factory=list)
 
 
-class OPMLImportItem(BaseModel):
-    url: str | None = None
-    title: str | None = None
-    status: Literal["imported", "partial", "skipped", "failed"]
+class FeedBatchDeleteRequest(BaseModel):
+    feed_ids: list[int] = Field(min_length=1)
+
+
+class FeedBatchDeleteItem(BaseModel):
+    feed_id: int
+    status: Literal["success", "failed", "skipped"]
     message: str
-    feed: FeedRead | None = None
-    source_file: str | None = None
 
 
-class OPMLImportReport(BaseModel):
-    files: int = 0
+class FeedBatchDeleteReport(BaseModel):
     total: int
-    imported: int
-    partial: int = 0
-    skipped: int
+    success: int
     failed: int
-    results: list[OPMLImportItem] = Field(default_factory=list)
+    skipped: int = 0
+    results: list[FeedBatchDeleteItem] = Field(default_factory=list)
 
 
 class ArticleRead(BaseModel):
@@ -88,6 +87,26 @@ class ArticleRead(BaseModel):
     is_starred: bool = False
     tag_ids: list[int] = Field(default_factory=list)
     created_at: datetime
+
+
+class OPMLImportItem(BaseModel):
+    url: str | None = None
+    title: str | None = None
+    status: Literal["pending", "imported", "partial", "skipped", "failed"]
+    message: str
+    feed: FeedRead | None = None
+    articles: list[ArticleRead] = Field(default_factory=list)
+    source_file: str | None = None
+
+
+class OPMLImportReport(BaseModel):
+    files: int = 0
+    total: int
+    imported: int
+    partial: int = 0
+    skipped: int
+    failed: int
+    results: list[OPMLImportItem] = Field(default_factory=list)
 
 
 class TagCreate(BaseModel):

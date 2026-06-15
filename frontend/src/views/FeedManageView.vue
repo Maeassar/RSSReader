@@ -28,6 +28,26 @@
         </el-button>
         <el-button class="feed-manage-action" :disabled="isBusy || feeds.length === 0" @click="selectAllFeeds">全选</el-button>
         <el-button class="feed-manage-action" :disabled="isBusy || selectedFeeds.length === 0" @click="clearFeedSelection">清空</el-button>
+        <el-popconfirm
+          :title="`确定删除选中的 ${selectedFeeds.length} 个订阅吗？`"
+          confirm-button-text="删除"
+          cancel-button-text="取消"
+          confirm-button-type="danger"
+          @confirm="deleteSelectedFeeds"
+        >
+          <template #reference>
+            <el-button
+              class="feed-manage-action"
+              type="danger"
+              plain
+              :icon="Delete"
+              :loading="deletingSelectedFeeds"
+              :disabled="isBusy || selectedFeeds.length === 0"
+            >
+              删除选中
+            </el-button>
+          </template>
+        </el-popconfirm>
         <el-button
           class="feed-manage-action"
           :loading="exportingOpml && exportMode === 'selected'"
@@ -157,17 +177,23 @@
 </template>
 
 <script setup lang="ts">
-import { Download, Refresh, Upload } from '@element-plus/icons-vue'
+import { Delete, Download, Refresh, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import type { Feed, FeedSyncReport, OPMLImportReport } from '../api/client'
+import type { Article, Feed, FeedSyncReport, OPMLImportItem, OPMLImportReport } from '../api/client'
 import { rssApi } from '../api/client'
+import { useOpmlImportStore } from '../stores/opmlImport'
+import { useReaderStore } from '../stores/reader'
 import { apiErrorMessage, showSyncReportMessage, statusTagType, syncSuggestion } from '../utils/syncDiagnostics'
 
 type FeedTableExpose = {
   clearSelection: () => void
   toggleRowSelection: (row: Feed, selected?: boolean) => void
+}
+
+export type FeedManagerChangedOptions = {
+  reload?: boolean
 }
 
 withDefaults(
@@ -181,10 +207,12 @@ withDefaults(
 
 const emit = defineEmits<{
   close: []
-  changed: []
+  changed: [options?: FeedManagerChangedOptions]
 }>()
 
 const router = useRouter()
+const opmlImportStore = useOpmlImportStore()
+const readerStore = useReaderStore()
 const feeds = ref<Feed[]>([])
 const selectedFeeds = ref<Feed[]>([])
 const feedTableRef = ref<FeedTableExpose | null>(null)
@@ -195,16 +223,18 @@ const addingFeed = ref(false)
 const syncingAll = ref(false)
 const syncingFeedId = ref<number | null>(null)
 const deletingFeedId = ref<number | null>(null)
-const importingOpml = ref(false)
+const deletingSelectedFeeds = ref(false)
 const exportingOpml = ref(false)
 const exportMode = ref<'all' | 'selected' | null>(null)
-const lastImportReport = ref<OPMLImportReport | null>(null)
+const importingOpml = computed(() => opmlImportStore.importing)
+const lastImportReport = computed(() => opmlImportStore.report)
 const lastSyncReport = ref<FeedSyncReport | null>(null)
 const isBusy = computed(
   () =>
     syncingAll.value ||
     syncingFeedId.value !== null ||
     deletingFeedId.value !== null ||
+    deletingSelectedFeeds.value ||
     importingOpml.value ||
     exportingOpml.value
 )
@@ -246,7 +276,9 @@ async function addFeed() {
     title.value = ''
     url.value = ''
     await loadFeeds()
-    emit('changed')
+    readerStore.upsertFeed(result.feed)
+    await refreshFeedArticlesSafely(result.feed.id)
+    emit('changed', { reload: false })
     if (result.status === 'partial') {
       lastSyncReport.value = {
         total: 1,
@@ -283,7 +315,12 @@ async function syncFeed(id: number) {
     await rssApi.syncFeed(id)
     lastSyncReport.value = null
     await loadFeeds()
-    emit('changed')
+    const updatedFeed = feeds.value.find((item) => item.id === id)
+    if (updatedFeed) {
+      readerStore.upsertFeed(updatedFeed)
+      await refreshFeedArticlesSafely(id)
+    }
+    emit('changed', { reload: false })
     ElMessage.success('同步完成')
   } catch (error) {
     const message = apiErrorMessage(error, '同步失败，请稍后重试')
@@ -315,12 +352,32 @@ async function deleteFeed(id: number) {
     await rssApi.deleteFeed(id)
     await loadFeeds()
     clearFeedSelection()
-    emit('changed')
+    readerStore.removeFeeds([id])
+    emit('changed', { reload: false })
     ElMessage.success('订阅已删除')
   } catch (error) {
     ElMessage.error(apiErrorMessage(error, '删除订阅失败，请稍后重试'))
   } finally {
     deletingFeedId.value = null
+  }
+}
+
+async function deleteSelectedFeeds() {
+  const feedIds = selectedFeeds.value.map((feed) => feed.id)
+  if (feedIds.length === 0) return
+
+  deletingSelectedFeeds.value = true
+  try {
+    const report = await rssApi.deleteFeeds(feedIds)
+    await loadFeeds()
+    clearFeedSelection()
+    readerStore.removeFeeds(report.results.filter((item) => item.status === 'success').map((item) => item.feed_id))
+    emit('changed', { reload: false })
+    showBatchDeleteMessage(report)
+  } catch (error) {
+    ElMessage.error(apiErrorMessage(error, '批量删除订阅失败，请稍后重试'))
+  } finally {
+    deletingSelectedFeeds.value = false
   }
 }
 
@@ -330,7 +387,8 @@ async function syncAll() {
     const report = await rssApi.syncAll()
     lastSyncReport.value = report
     await loadFeeds()
-    emit('changed')
+    await readerStore.loadAll()
+    emit('changed', { reload: false })
     showSyncReportMessage(report)
   } catch (error) {
     ElMessage.error(apiErrorMessage(error, '同步全部失败，请稍后重试'))
@@ -349,17 +407,36 @@ async function handleOpmlFilesSelected(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
   if (!files.length) return
-  importingOpml.value = true
+  const pendingReport = await createPendingImportReport(files)
+  opmlImportStore.start(files.length, pendingReport.results)
+  const importedFeedRefreshes: Promise<void>[] = []
   try {
-    const report = await rssApi.importOpml(files)
-    lastImportReport.value = report
+    await rssApi.importOpmlStream(files, (event) => {
+      if (event.type === 'parsed') {
+        opmlImportStore.setParsed(event.report)
+        return
+      }
+      if (event.type === 'item' && event.item) {
+        opmlImportStore.mergeItem(event.item)
+      } else {
+        opmlImportStore.finish(event.report)
+      }
+      if (event.item?.feed) {
+        const fallbackRefresh = publishImportedFeed(event.item.feed, event.item.articles ?? [])
+        if (fallbackRefresh) importedFeedRefreshes.push(fallbackRefresh)
+      }
+    })
+    const report = opmlImportStore.report
+    await Promise.allSettled(importedFeedRefreshes)
     await loadFeeds()
-    emit('changed')
-    showImportReportMessage(report)
+    await readerStore.loadAll()
+    emit('changed', { reload: false })
+    opmlImportStore.finish(report)
+    if (report) showImportReportMessage(report)
   } catch (error) {
     ElMessage.error(apiErrorMessage(error, 'OPML 导入失败，请检查文件格式或订阅源地址'))
+    opmlImportStore.finish()
   } finally {
-    importingOpml.value = false
     input.value = ''
   }
 }
@@ -410,6 +487,143 @@ function handleFeedSelectionChange(selection: Feed[]) {
   selectedFeeds.value = selection
 }
 
+function createEmptyImportReport(files: number): OPMLImportReport {
+  return {
+    files,
+    total: 0,
+    imported: 0,
+    partial: 0,
+    skipped: 0,
+    failed: 0,
+    results: []
+  }
+}
+
+async function createPendingImportReport(files: File[]): Promise<OPMLImportReport> {
+  const results: OPMLImportItem[] = []
+  for (const file of files) {
+    const text = await file.text()
+    const parsedItems = parseOpmlPreview(text, file.name || 'subscriptions.opml')
+    results.push(...parsedItems)
+  }
+  return {
+    ...createEmptyImportReport(files.length),
+    total: results.length,
+    failed: results.filter((item) => item.status === 'failed').length,
+    results
+  }
+}
+
+function parseOpmlPreview(text: string, sourceFile: string): OPMLImportItem[] {
+  const document = new DOMParser().parseFromString(text, 'application/xml')
+  if (document.querySelector('parsererror')) {
+    return [
+      {
+        url: null,
+        title: undefined,
+        status: 'failed',
+        message: 'Invalid OPML XML.',
+        feed: null,
+        source_file: sourceFile
+      }
+    ]
+  }
+
+  const results: OPMLImportItem[] = []
+  const seenUrls = new Set<string>()
+  document.querySelectorAll('outline').forEach((outline) => {
+    const attributes = normalizedAttributes(outline)
+    const textValue = normalizeText(attributes.text)
+    const url =
+      normalizeText(firstAttribute(attributes, 'xmlurl', 'feedurl', 'rssurl', 'atomurl', 'url', 'href')) ||
+      (looksLikeUrl(textValue) ? textValue : null)
+    if (!url || seenUrls.has(url)) return
+
+    results.push({
+      url,
+      title: normalizeText(attributes.title) || textValue || undefined,
+      status: 'pending',
+      message: '正在上传',
+      feed: null,
+      source_file: sourceFile
+    })
+    seenUrls.add(url)
+  })
+
+  if (results.length > 0) return results
+  return [
+    {
+      url: null,
+      title: undefined,
+      status: 'failed',
+      message: 'OPML 文件中没有可识别的 Feed URL。',
+      feed: null,
+      source_file: sourceFile
+    }
+  ]
+}
+
+function normalizedAttributes(element: Element) {
+  const attributes: Record<string, string> = {}
+  Array.from(element.attributes).forEach((attribute) => {
+    attributes[normalizeAttributeName(attribute.name)] = attribute.value
+  })
+  return attributes
+}
+
+function normalizeAttributeName(value: string) {
+  return value
+    .split(':')
+    .pop()!
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+}
+
+function firstAttribute(attributes: Record<string, string>, ...names: string[]) {
+  for (const name of names) {
+    const value = attributes[normalizeAttributeName(name)]
+    if (value) return value
+  }
+  return null
+}
+
+function normalizeText(value?: string | null) {
+  const normalized = (value || '').trim()
+  return normalized || null
+}
+
+function looksLikeUrl(value?: string | null) {
+  const normalized = (value || '').trim().toLowerCase()
+  return normalized.startsWith('http://') || normalized.startsWith('https://')
+}
+
+function upsertFeed(feed: Feed) {
+  const index = feeds.value.findIndex((item) => item.id === feed.id)
+  if (index >= 0) {
+    feeds.value.splice(index, 1, feed)
+    return
+  }
+  feeds.value.unshift(feed)
+}
+
+function publishImportedFeed(feed: Feed, articles: Article[]) {
+  upsertFeed(feed)
+  readerStore.upsertFeed(feed)
+  if (articles.length > 0) {
+    readerStore.mergeArticles(articles)
+    return null
+  }
+  return refreshFeedArticlesSafely(feed.id)
+}
+
+async function refreshFeedArticlesSafely(feedId: number) {
+  try {
+    await readerStore.refreshFeedArticles(feedId)
+  } catch (error) {
+    console.warn('Failed to refresh feed articles', error)
+  }
+}
+
 function showImportReportMessage(report: OPMLImportReport) {
   if (report.total === 0) {
     ElMessage.warning('OPML 文件中没有可导入的订阅源')
@@ -428,6 +642,14 @@ function showImportReportMessage(report: OPMLImportReport) {
   ElMessage.success(`OPML 导入完成：新增并同步 ${report.imported} 个订阅`)
 }
 
+function showBatchDeleteMessage(report: { success: number; failed: number; skipped: number }) {
+  if (report.failed > 0) {
+    ElMessage.warning(`已删除 ${report.success} 个订阅，失败 ${report.failed} 个，跳过 ${report.skipped} 个`)
+    return
+  }
+  ElMessage.success(`已删除 ${report.success} 个订阅`)
+}
+
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     imported: '新增',
@@ -435,7 +657,7 @@ function statusLabel(status: string) {
     skipped: '跳过',
     failed: '失败',
     success: '成功',
-    pending: '待同步'
+    pending: '上传中'
   }
   return labels[status] || status
 }

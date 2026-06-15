@@ -31,6 +31,7 @@ class FakeOPMLRepository:
             }
         ]
         self.logs = []
+        self.articles = []
         self.create_feed_calls = 0
         self.create_feed_metadata_calls = 0
         self.sync_feed_calls = 0
@@ -74,6 +75,7 @@ class FakeOPMLRepository:
             raise ValueError("network error")
         feed["title"] = "Parsed title"
         feed["last_sync_at"] = datetime.now(timezone.utc)
+        self.articles.append(self._article(feed_id, feed["title"]))
         self.log_feed_event(feed_id, feed["url"], "success", "Synced feed and saved 1 new entries.")
         return feed
 
@@ -96,6 +98,32 @@ class FakeOPMLRepository:
             }
         )
 
+    def list_articles(self, feed_id=None, tag_id=None, unread=None, starred=None):
+        articles = list(self.articles)
+        if feed_id is not None:
+            articles = [article for article in articles if article["feed_id"] == feed_id]
+        return articles
+
+    def _article(self, feed_id, feed_title):
+        article_id = len(self.articles) + 1
+        return {
+            "id": article_id,
+            "feed_id": feed_id,
+            "feed_title": feed_title,
+            "title": f"Article {article_id}",
+            "url": f"https://example.com/articles/{article_id}",
+            "author": None,
+            "published_at": datetime.now(timezone.utc),
+            "summary": None,
+            "raw_html": None,
+            "cleaned_html": None,
+            "cleaned_markdown": None,
+            "is_read": False,
+            "is_starred": False,
+            "tag_ids": [],
+            "created_at": datetime.now(timezone.utc),
+        }
+
 
 class FakeSyncRepository:
     def list_feeds(self):
@@ -116,6 +144,18 @@ class FakeSyncRepository:
             "last_sync_at": datetime.now(timezone.utc),
             "created_at": datetime.now(timezone.utc),
         }
+
+
+class FakeDeleteRepository:
+    def __init__(self) -> None:
+        self.feed_ids = {1, 2}
+        self.deleted = []
+
+    def delete_feed(self, feed_id):
+        if feed_id not in self.feed_ids:
+            raise ValueError(f"Feed {feed_id} not found")
+        self.feed_ids.remove(feed_id)
+        self.deleted.append(feed_id)
 
 
 class FakeCreateRepository:
@@ -180,6 +220,72 @@ class OPMLServiceTest(unittest.TestCase):
 
         self.assertEqual(items, [{"url": "https://example.com/one.xml", "title": "One"}])
 
+    def test_parse_opml_accepts_common_url_attribute_variants(self):
+        items = opml_service.parse_opml_feeds(
+            """
+            <opml version="2.0">
+              <body>
+                <outline text="Feed URL" feedUrl="https://example.com/feed-url.xml" />
+                <outline title="Plain URL" url="https://example.com/plain-url.xml" />
+                <outline text="https://example.com/text-url.xml" />
+              </body>
+            </opml>
+            """
+        )
+
+        self.assertEqual(
+            items,
+            [
+                {"url": "https://example.com/feed-url.xml", "title": "Feed URL"},
+                {"url": "https://example.com/plain-url.xml", "title": "Plain URL"},
+                {"url": "https://example.com/text-url.xml", "title": "https://example.com/text-url.xml"},
+            ],
+        )
+
+    def test_parse_opml_uploads_returns_pending_items_before_importing(self):
+        items = asyncio.run(
+            opml_service.parse_opml_uploads(
+                [
+                    FakeUploadFile(
+                        """
+                        <opml version="2.0">
+                          <body>
+                            <outline text="One" xmlUrl="https://example.com/one.xml" />
+                          </body>
+                        </opml>
+                        """,
+                        "one.opml",
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual(items[0]["status"], "pending")
+        self.assertEqual(items[0]["message"], "正在上传")
+        self.assertEqual(items[0]["url"], "https://example.com/one.xml")
+        self.assertEqual(items[0]["source_file"], "one.opml")
+
+    def test_parse_opml_uploads_reports_empty_files(self):
+        items = asyncio.run(
+            opml_service.parse_opml_uploads(
+                [
+                    FakeUploadFile(
+                        """
+                        <opml version="2.0">
+                          <body>
+                            <outline text="Folder" />
+                          </body>
+                        </opml>
+                        """,
+                        "empty.opml",
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual(items[0]["status"], "failed")
+        self.assertEqual(items[0]["message"], "No feed URLs found in OPML file.")
+
     def test_import_opml_reports_imported_skipped_and_failed_items(self):
         old_repository = opml_service.repository
         fake_repository = FakeOPMLRepository()
@@ -220,6 +326,8 @@ class OPMLServiceTest(unittest.TestCase):
         self.assertEqual(len([item for item in fake_repository.logs if item["status"] == "failed"]), 3)
         self.assertIsNotNone(report["results"][1]["feed"]["last_sync_at"])
         self.assertEqual(report["results"][1]["feed"]["title"], "New Feed")
+        self.assertEqual(len(report["results"][1]["articles"]), 1)
+        self.assertEqual(report["results"][1]["articles"][0]["feed_id"], report["results"][1]["feed"]["id"])
         self.assertIsNone(report["results"][4]["feed"]["last_sync_at"])
         self.assertEqual(report["results"][4]["message"], "network error")
 
@@ -363,6 +471,22 @@ class SyncAllServiceTest(unittest.TestCase):
         self.assertEqual(report["failed"], 1)
         self.assertEqual(report["results"][0]["status"], "success")
         self.assertEqual(report["results"][1]["status"], "failed")
+
+    def test_batch_delete_keeps_deleting_when_one_feed_fails(self):
+        old_repository = feed_service.repository
+        fake_repository = FakeDeleteRepository()
+        feed_service.repository = fake_repository
+        try:
+            report = feed_service.delete_feeds([1, 999, 1, 2])
+        finally:
+            feed_service.repository = old_repository
+
+        self.assertEqual(report["total"], 4)
+        self.assertEqual(report["success"], 2)
+        self.assertEqual(report["failed"], 1)
+        self.assertEqual(report["skipped"], 1)
+        self.assertEqual(fake_repository.deleted, [1, 2])
+        self.assertEqual([item["status"] for item in report["results"]], ["success", "failed", "skipped", "success"])
 
 
 class EntryDeduplicationTest(unittest.TestCase):
