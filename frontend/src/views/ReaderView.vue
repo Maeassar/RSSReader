@@ -885,7 +885,9 @@ watch(
       try {
         await flushNote({ articleId: oldId, content: note.value })
       } catch {
-        ElMessage.error('保存上一条文章笔记失败')
+        if (store.hasArticle(oldId)) {
+          ElMessage.error('保存上一条文章笔记失败')
+        }
       }
     }
     clearSummaryResult()
@@ -1073,6 +1075,11 @@ async function loadNote() {
     lastSavedNote.value = data.content_markdown
     noteSaveState.value = data.content_markdown.trim() ? 'saved' : 'idle'
     await nextTick()
+  } catch (error) {
+    console.warn('Failed to load note', error)
+    note.value = ''
+    lastSavedNote.value = ''
+    noteSaveState.value = 'idle'
   } finally {
     noteLoading.value = false
   }
@@ -1294,7 +1301,7 @@ async function flushNote(options: { articleId?: number; content?: string; showSu
   const articleId = options.articleId ?? store.selectedArticle?.id
   if (!articleId) return
   const content = options.content ?? note.value
-  if (options.articleId === undefined && content === lastSavedNote.value) {
+  if (content === lastSavedNote.value) {
     noteSaveState.value = content.trim() ? 'saved' : 'idle'
     if (options.showSuccess) ElMessage.success('笔记已保存')
     return

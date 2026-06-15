@@ -71,6 +71,16 @@ function toListItem(article: Article): ArticleListItem {
   }
 }
 
+function toArticle(item: ArticleListItem): Article {
+  return {
+    ...item,
+    raw_html: '',
+    cleaned_html: item.summary || '',
+    cleaned_markdown: '',
+    tag_ids: item.tag_ids
+  }
+}
+
 function sortArticles(articles: ArticleListItem[], pinnedArticleIds: number[], sortOrder: SortOrder) {
   const pinned = new Set(pinnedArticleIds)
   return [...articles].sort((left, right) => {
@@ -243,6 +253,7 @@ export const useReaderStore = defineStore('reader', {
         ...Object.fromEntries(articles.map((article) => [article.id, article]))
       }
       this.setFeedArticleCount(feedId, articles.length)
+      this.adjustCachedArticleCounts(articleItems)
     },
     applyArticleCounts(counts: ArticleCounts) {
       const nextCounts: ArticleCounts = {
@@ -280,6 +291,48 @@ export const useReaderStore = defineStore('reader', {
         }
       }
     },
+    adjustCachedArticleCounts(articles: ArticleListItem[]) {
+      if (!articles.length) return
+      const unreadIds = new Set<number>()
+      const starredIds = new Set<number>()
+      Object.values(this.feedArticleCache).forEach((items) => {
+        items.forEach((article) => {
+          if (!article.is_read) unreadIds.add(article.id)
+          if (article.is_starred) starredIds.add(article.id)
+        })
+      })
+      articles.forEach((article) => {
+        if (!article.is_read) unreadIds.add(article.id)
+        else unreadIds.delete(article.id)
+        if (article.is_starred) starredIds.add(article.id)
+        else starredIds.delete(article.id)
+      })
+      this.articleCounts = {
+        ...this.articleCounts,
+        unread: Math.max(this.articleCounts.unread, unreadIds.size),
+        starred: Math.max(this.articleCounts.starred, starredIds.size)
+      }
+    },
+    isCachedArticle(articleId: number) {
+      return Object.values(this.feedArticleCache).some((articles) => articles.some((article) => article.id === articleId))
+    },
+    replaceCachedArticleItem(article: ArticleListItem) {
+      const nextCache: Record<number, ArticleListItem[]> = {}
+      Object.entries(this.feedArticleCache).forEach(([feedId, articles]) => {
+        nextCache[Number(feedId)] = articles.map((item) => (item.id === article.id ? article : item))
+      })
+      this.feedArticleCache = nextCache
+      const cachedDetail = this.detailCache[article.id]
+      if (cachedDetail) {
+        this.detailCache = { ...this.detailCache, [article.id]: { ...cachedDetail, ...article } }
+      }
+    },
+    adjustUnreadCount(delta: number) {
+      this.articleCounts = { ...this.articleCounts, unread: Math.max(0, this.articleCounts.unread + delta) }
+    },
+    adjustStarredCount(delta: number) {
+      this.articleCounts = { ...this.articleCounts, starred: Math.max(0, this.articleCounts.starred + delta) }
+    },
     async ensureSelectedArticle() {
       if (!this.articleItems.length) {
         this.selectedArticle = null
@@ -296,6 +349,12 @@ export const useReaderStore = defineStore('reader', {
       this.detailCache = { ...this.detailCache, [id]: article }
       this.selectedArticle = article
       if (options.markRead !== false && !article.is_read) {
+        if (this.isCachedArticle(article.id)) {
+          this.replaceArticle({ ...article, is_read: true })
+          this.replaceCachedArticleItem(toListItem({ ...article, is_read: true }))
+          this.adjustUnreadCount(-1)
+          return
+        }
         const updated = await rssApi.markRead(article.id, true)
         this.replaceArticle(updated)
         await this.loadCounts()
@@ -344,6 +403,9 @@ export const useReaderStore = defineStore('reader', {
       this.feedArticleCache = Object.fromEntries(
         Object.entries(this.feedArticleCache).filter(([feedId]) => !ids.has(Number(feedId)))
       )
+      this.detailCache = Object.fromEntries(
+        Object.entries(this.detailCache).filter(([, article]) => !ids.has(article.feed_id))
+      )
       this.protectedFeedCounts = Object.fromEntries(
         Object.entries(this.protectedFeedCounts).filter(([feedId]) => !ids.has(Number(feedId)))
       )
@@ -353,11 +415,31 @@ export const useReaderStore = defineStore('reader', {
       }
     },
     async toggleRead(article: ArticleListItem | Article) {
+      if (this.isCachedArticle(article.id)) {
+        const updated = { ...article, is_read: !article.is_read }
+        this.replaceArticleItem(toListItem(updated as Article))
+        this.replaceCachedArticleItem(toListItem(updated as Article))
+        this.adjustUnreadCount(updated.is_read ? -1 : 1)
+        if (this.selectedArticle?.id === article.id) {
+          this.selectedArticle = { ...(this.selectedArticle ?? toArticle(toListItem(updated as Article))), is_read: updated.is_read }
+        }
+        return
+      }
       const updated = await rssApi.markRead(article.id, !article.is_read)
       this.replaceArticle(updated)
       await this.loadCounts()
     },
     async toggleStar(article: ArticleListItem | Article) {
+      if (this.isCachedArticle(article.id)) {
+        const updated = { ...article, is_starred: !article.is_starred }
+        this.replaceArticleItem(toListItem(updated as Article))
+        this.replaceCachedArticleItem(toListItem(updated as Article))
+        this.adjustStarredCount(updated.is_starred ? 1 : -1)
+        if (this.selectedArticle?.id === article.id) {
+          this.selectedArticle = { ...(this.selectedArticle ?? toArticle(toListItem(updated as Article))), is_starred: updated.is_starred }
+        }
+        return
+      }
       const updated = await rssApi.markStarred(article.id, !article.is_starred)
       this.replaceArticle(updated)
       await this.loadCounts()
@@ -386,6 +468,13 @@ export const useReaderStore = defineStore('reader', {
     },
     isPinned(articleId: number) {
       return this.pinnedArticleIds.includes(articleId)
+    },
+    hasArticle(articleId: number) {
+      return (
+        this.articleItems.some((article) => article.id === articleId) ||
+        Boolean(this.detailCache[articleId]) ||
+        Object.values(this.feedArticleCache).some((articles) => articles.some((article) => article.id === articleId))
+      )
     },
     setSummaryLineCount(value: number) {
       const normalized = Number.isFinite(value) && value >= 1 && value <= 5 ? Math.round(value) : 2

@@ -461,3 +461,13 @@
 - Cached feed loading advances the reader load request sequence, so any older blocked network response cannot overwrite the cached readable list when it eventually returns.
 - OPML item handling no longer calls `/api/articles/counts` after every successful feed; it updates protected per-feed counts from the streamed article payload and leaves aggregate reconciliation to later refreshes.
 - Verification: `npm.cmd run build --prefix frontend` passed with the existing Rollup annotation and chunk-size warnings.
+
+## 2026-06-15 (OPML import cached actions and note silence)
+
+- Used AI Coding Agent to fix OPML import interactions around read/star actions and note auto-save noise.
+- Cached OPML articles now support local read and star toggles while the backend import stream is still busy, avoiding repeated connection-failure messages.
+- Reader aggregate unread/starred counts are adjusted locally for cached article actions so the unread and favorite filters no longer stay at zero during import.
+- Cached article selection marks articles read locally instead of issuing a blocking backend read-state request.
+- Note loading now fails quietly during transient backend unavailability, and unchanged notes are no longer saved during article switches or feed deletion.
+- Deleting a feed now removes its detail cache entries, so a failed save for a removed article does not show the "save previous note failed" message.
+- Verification: `npm.cmd run build --prefix frontend` passed with the existing Rollup annotation and chunk-size warnings.

@@ -365,3 +365,19 @@ npm.cmd run build --prefix frontend
 ```
 
 Result: build passed. Vite/Rollup still reports existing third-party annotation and chunk-size warnings.
+
+### Follow-up Fix: Cached Actions and Note Auto-Save During Import
+
+- Cached OPML articles now support local read and favorite toggles while the backend is still processing the remaining feeds.
+- Local cached actions update the selected article, article list item, per-feed cache, and unread/starred aggregate counters without waiting on backend PATCH requests.
+- Cached article selection marks the article read locally, preventing backend connection errors when users read imported articles during OPML upload.
+- Note auto-save skips unchanged content even when article switches pass an explicit old article id.
+- Note loading failures during transient backend unavailability are handled quietly, and deleted feed articles are removed from the reader detail cache so deleting a feed does not show "save previous note failed" for removed articles.
+
+### Verification
+
+```bash
+npm.cmd run build --prefix frontend
+```
+
+Result: build passed. Vite/Rollup still reports existing third-party annotation and chunk-size warnings.
