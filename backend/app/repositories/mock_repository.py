@@ -239,7 +239,21 @@ class MockRepository:
         self.notes[article_id] = note
         return deepcopy(note)
 
-    def create_ai_result(self, article_id, result_type, prompt, result):
+    def get_default_llm_provider(self):
+        return deepcopy(self.providers[0])
+
+    def create_ai_result(
+        self,
+        article_id,
+        result_type,
+        prompt,
+        result,
+        provider=None,
+        model=None,
+        input_tokens=256,
+        output_tokens=128,
+        status="success",
+    ):
         item = {
             "id": self._next_id(self.ai_results),
             "article_id": article_id,
@@ -247,8 +261,8 @@ class MockRepository:
             "provider_id": 1,
             "prompt": prompt,
             "result": result,
-            "input_tokens": 256,
-            "output_tokens": 128,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
             "created_at": now(),
         }
         self.ai_results.append(item)

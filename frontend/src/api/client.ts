@@ -97,6 +97,18 @@ export interface AIResult {
   created_at: string
 }
 
+export interface TagSuggestionCandidate {
+  name: string
+  tag_id?: number | null
+  reason?: string | null
+}
+
+export interface TagSuggestionResponse {
+  article_id: number
+  candidates: TagSuggestionCandidate[]
+  ai_result: AIResult
+}
+
 export interface SummaryRequestPayload {
   provider_id?: number | null
   refresh?: boolean
@@ -349,7 +361,8 @@ export const rssApi = {
   streamSummary: (articleId: number, payload: SummaryRequestPayload | undefined, onEvent: (event: SummaryStreamEvent) => void) =>
     streamSse<SummaryStreamEvent>(`${apiBaseUrl}/ai/summary/${articleId}/stream`, payload ?? {}, onEvent),
   translate: (articleId: number) => api.post<AIResult>(`/ai/translate/${articleId}`).then((res) => res.data),
-  suggestTags: (articleId: number) => api.post<AIResult>(`/ai/tag-suggest/${articleId}`).then((res) => res.data),
+  suggestTags: (articleId: number) =>
+    api.post<TagSuggestionResponse>(`/ai/tag-suggest/${articleId}`, null, { timeout: 120000 }).then((res) => res.data),
   llmProviders: () => api.get<LLMProvider[]>('/ai/providers').then((res) => res.data),
   createLLMProvider: (payload: LLMProviderPayload) => api.post<LLMProvider>('/ai/providers', payload).then((res) => res.data),
   updateLLMProvider: (id: number, payload: Partial<LLMProviderPayload>) => api.put<LLMProvider>(`/ai/providers/${id}`, payload).then((res) => res.data),

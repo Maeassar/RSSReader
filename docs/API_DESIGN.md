@@ -79,6 +79,33 @@
 - `POST /api/ai/translate/{article_id}`
 - `POST /api/ai/tag-suggest/{article_id}`
 
+### `POST /api/ai/tag-suggest/{article_id}`
+
+Uses the default enabled LLM Provider from AI settings to generate tag candidates for one article. Fewer than 5 usable candidates are allowed, and more than 8 candidates are truncated to the first 8. The endpoint only creates an `ai_results` audit row; it does not create tags or assign tags to the article. The frontend must call `POST /api/tags` and `POST /api/articles/{id}/tags` after the user confirms which candidates to keep.
+
+Response example:
+
+```json
+{
+  "article_id": 12,
+  "candidates": [
+    { "name": "AI", "tag_id": 2, "reason": "Existing tag that matches the article topic." },
+    { "name": "Local Models", "tag_id": null, "reason": "New reusable topic suggested from the article." }
+  ],
+  "ai_result": {
+    "id": 31,
+    "article_id": 12,
+    "type": "tag_suggestion",
+    "provider_id": null,
+    "prompt": "...",
+    "result": "{\"candidates\":[...]}",
+    "input_tokens": 640,
+    "output_tokens": 90,
+    "created_at": "2026-06-16T12:00:00"
+  }
+}
+```
+
 ## Stats and Logs
 
 - `GET /api/stats/llm`

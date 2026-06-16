@@ -488,3 +488,26 @@
 - Added a tag search input in the article tag popover so users can quickly filter existing tags before assigning them.
 - Pressing Enter in the tag search box now assigns an exact matching tag or creates and assigns a new tag using the current tag color.
 - Verification: `npm.cmd run build --prefix frontend` passed with the existing Rollup annotation and chunk-size warnings.
+
+## 2026-06-16 (AI tag candidate generation)
+
+- Used AI Coding Agent to upgrade tag suggestions from a mock text response to real LLM-backed candidates.
+- Added a backend tag agent that reuses the default Summary LLM Provider settings, sends article context plus existing tags, parses structured JSON, and saves an `ai_results` audit row.
+- Changed `/api/ai/tag-suggest/{article_id}` to return `article_id`, structured candidates, and the saved AI result instead of a plain `AIResult` body.
+- Added an AI generation panel to the article tag popover where users can generate candidates, deselect unwanted tags, and apply only confirmed labels.
+- Manual tag creation, tag search, tag toggles, sidebar filtering, and tag deletion remain available.
+- Remaining limitation: candidate quality depends on the configured LLM Provider and the available article content.
+
+## 2026-06-16 (Tag sidebar scrolling and Chinese AI tag UI)
+
+- Used AI Coding Agent to fix the reader sidebar tag section when large tag sets overflow the left column.
+- Wrapped the sidebar tag list in its own scrollbar with a bounded height so tags can scroll without hiding the feed list below.
+- Localized the AI tag candidate panel text, badges, success message, and error fallbacks from English to Chinese.
+- Verification: `npm.cmd run build --prefix frontend` passed with the existing Rollup annotation and chunk-size warnings.
+
+## 2026-06-16 (External browser link handling)
+
+- Used AI Coding Agent to make reader links open through the system default browser in the desktop app.
+- Added an Electron `openExternal` IPC bridge and main-window navigation/window-open guards so article links no longer create in-app popup windows.
+- Routed article source links, article-body links, and AI summary result links through the same external-link handler, with a browser fallback for frontend development.
+- Verification: `npm.cmd run build --prefix frontend` passed with the existing Rollup annotation and chunk-size warnings.

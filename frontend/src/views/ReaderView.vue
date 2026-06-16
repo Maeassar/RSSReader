@@ -24,46 +24,48 @@
           <span>标签</span>
           <span class="sidebar-chevron" :class="{ expanded: store.tagPanelExpanded }">›</span>
         </button>
-        <div v-show="store.tagPanelExpanded" class="sidebar-group-content">
-          <div class="tag-create-row">
-            <el-input
-              v-model="newTagName"
-              size="small"
-              placeholder="新建标签"
-              @keyup.enter="createTag"
-            />
-            <input v-model="newTagColor" class="tag-color-input" type="color" aria-label="选择标签颜色" />
-            <el-button size="small" @click="createTag">添加</el-button>
-          </div>
-          <button
-            v-for="tag in store.tags"
-            :key="tag.id"
-            type="button"
-            class="sidebar-filter-button"
-            :class="{ active: activeTagId === tag.id }"
-            @click="applyTagFilter(activeTagId === tag.id ? null : tag.id)"
-          >
-            <span class="tag-filter-label">
-              <span class="tag-dot" :style="{ background: tag.color }"></span>
-              <span>{{ tag.name }}</span>
-            </span>
-            <span class="tag-filter-actions">
-              <span class="sidebar-filter-count">{{ tagArticleCount(tag.id) }}</span>
-              <span
-                role="button"
-                tabindex="0"
-                class="tag-delete-action"
-                :aria-label="`删除标签 ${tag.name}`"
-                title="删除标签"
-                @click.stop="deleteTag(tag.id)"
-                @keydown.enter.stop.prevent="deleteTag(tag.id)"
-                @keydown.space.stop.prevent="deleteTag(tag.id)"
-              >
-                <el-icon><Delete /></el-icon>
+        <el-scrollbar v-show="store.tagPanelExpanded" class="sidebar-tag-scrollbar">
+          <div class="sidebar-group-content sidebar-tag-list">
+            <div class="tag-create-row">
+              <el-input
+                v-model="newTagName"
+                size="small"
+                placeholder="新建标签"
+                @keyup.enter="createTag"
+              />
+              <input v-model="newTagColor" class="tag-color-input" type="color" aria-label="选择标签颜色" />
+              <el-button size="small" @click="createTag">添加</el-button>
+            </div>
+            <button
+              v-for="tag in store.tags"
+              :key="tag.id"
+              type="button"
+              class="sidebar-filter-button"
+              :class="{ active: activeTagId === tag.id }"
+              @click="applyTagFilter(activeTagId === tag.id ? null : tag.id)"
+            >
+              <span class="tag-filter-label">
+                <span class="tag-dot" :style="{ background: tag.color }"></span>
+                <span>{{ tag.name }}</span>
               </span>
-            </span>
-          </button>
-        </div>
+              <span class="tag-filter-actions">
+                <span class="sidebar-filter-count">{{ tagArticleCount(tag.id) }}</span>
+                <span
+                  role="button"
+                  tabindex="0"
+                  class="tag-delete-action"
+                  :aria-label="`删除标签 ${tag.name}`"
+                  title="删除标签"
+                  @click.stop="deleteTag(tag.id)"
+                  @keydown.enter.stop.prevent="deleteTag(tag.id)"
+                  @keydown.space.stop.prevent="deleteTag(tag.id)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </span>
+              </span>
+            </button>
+          </div>
+        </el-scrollbar>
 
         <div class="sidebar-section-header">
 <!--          <span class="sidebar-section-title">订阅源</span>-->
@@ -311,7 +313,7 @@
 
       <section v-if="store.selectedArticle && !feedManagerOpen" class="panel reader-detail-panel">
         <div class="toolbar detail-toolbar">
-          <el-popover placement="bottom" :width="320" trigger="click" popper-class="tag-popover">
+          <el-popover placement="bottom" :width="380" trigger="click" popper-class="tag-popover">
             <template #reference>
               <el-button class="toolbar-icon-button" :icon="CollectionTag" circle aria-label="标签" title="标签" />
             </template>
@@ -324,6 +326,38 @@
                 placeholder="搜索标签"
                 @keyup.enter="createAndAssignTagFromSearch"
               />
+              <div class="ai-tag-panel">
+                <div class="ai-tag-panel-header">
+                  <span class="ai-tag-panel-title">AI 推荐标签</span>
+                  <el-button size="small" :loading="aiTagLoading" :icon="MagicStick" @click="generateAiTags">
+                    AI 生成
+                  </el-button>
+                </div>
+                <div v-if="aiTagError" class="ai-tag-error">{{ aiTagError }}</div>
+                <div v-if="aiTagCandidates.length" class="ai-tag-candidate-list">
+                  <button
+                    v-for="candidate in aiTagCandidates"
+                    :key="aiTagCandidateKey(candidate)"
+                    type="button"
+                    class="ai-tag-candidate"
+                    :class="{
+                      active: isAiTagCandidateSelected(candidate),
+                      assigned: isAiTagCandidateAssigned(candidate)
+                    }"
+                    :title="candidate.reason || candidate.name"
+                    @click="toggleAiTagCandidate(candidate)"
+                  >
+                    <span>{{ candidate.name }}</span>
+                    <span class="ai-tag-badge">{{ candidate.tag_id ? '已有' : '新建' }}</span>
+                  </button>
+                </div>
+                <div v-if="aiTagCandidates.length" class="ai-tag-actions">
+                  <el-button size="small" @click="clearAiTagCandidates">清空</el-button>
+                  <el-button size="small" type="primary" :loading="aiTagApplying" @click="applyAiTagCandidates">
+                    应用所选
+                  </el-button>
+                </div>
+              </div>
               <div v-if="filteredTagOptions.length" class="tag-selection-list">
                 <button
                   v-for="tag in filteredTagOptions"
@@ -433,7 +467,7 @@
               </div>
               <h1 class="reader-title" v-html="renderTitleInlineHtml(store.selectedArticle.title)"></h1>
               <div class="reader-source-link-row">
-                <a class="reader-source-link" :href="store.selectedArticle.url" target="_blank" rel="noopener noreferrer">
+                <a class="reader-source-link" :href="store.selectedArticle.url" target="_blank" rel="noopener noreferrer" @click="handleExternalLinkClick">
                   {{ store.selectedArticle.url }}
                 </a>
               </div>
@@ -442,7 +476,7 @@
                 <span v-if="readerPublishedAt(store.selectedArticle)">{{ readerPublishedAt(store.selectedArticle) }}</span>
               </div>
             </header>
-            <div ref="articleBodyRef" class="article-body" v-html="renderedArticleHtml"></div>
+            <div ref="articleBodyRef" class="article-body" v-html="renderedArticleHtml" @click="handleArticleContentClick"></div>
             </div>
         </div>
 
@@ -512,7 +546,7 @@
               </div>
             </transition-group>
             <div v-if="summaryResultVisible && !summaryRunning" class="summary-drawer-result">
-              <div class="summary-result-body article-body" v-html="renderedAiResult"></div>
+              <div class="summary-result-body article-body" v-html="renderedAiResult" @click="handleArticleContentClick"></div>
               <div class="summary-result-footer">
                 <button class="summary-copy-btn" :class="{ copied: copyDone }" @click="copySummary">
                   <svg viewBox="0 0 16 16" fill="none">
@@ -613,7 +647,7 @@ import { Check, Close, CollectionTag, CopyDocument, Delete, Download, EditPen, F
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { Article, ArticleListItem, BatchDigestExportResponse, FeedSyncReport, LLMProvider, SummaryStreamEvent } from '../api/client'
+import type { Article, ArticleListItem, BatchDigestExportResponse, FeedSyncReport, LLMProvider, SummaryStreamEvent, TagSuggestionCandidate } from '../api/client'
 import { getErrorMessage, rssApi } from '../api/client'
 import type { ArticleListQuery } from '../stores/reader'
 import { useReaderStore } from '../stores/reader'
@@ -750,6 +784,11 @@ const batchIncludeFullText = ref(false)
 const newTagName = ref('')
 const newTagColor = ref('#5b8def')
 const tagSearchQuery = ref('')
+const aiTagLoading = ref(false)
+const aiTagApplying = ref(false)
+const aiTagError = ref('')
+const aiTagCandidates = ref<TagSuggestionCandidate[]>([])
+const selectedAiTagNames = ref<string[]>([])
 const failedThumbnailKeys = ref<Set<string>>(new Set())
 const failedFeedIconIds = ref<Set<number>>(new Set())
 const syncingAllFeeds = ref(false)
@@ -1326,6 +1365,89 @@ async function createAndAssignTagFromSearch() {
   tagSearchQuery.value = ''
 }
 
+function normalizeAiTagName(name: string) {
+  return name.trim().toLowerCase()
+}
+
+function aiTagCandidateKey(candidate: TagSuggestionCandidate) {
+  return `${normalizeAiTagName(candidate.name)}-${candidate.tag_id ?? 'new'}`
+}
+
+function isAiTagCandidateSelected(candidate: TagSuggestionCandidate) {
+  return selectedAiTagNames.value.includes(normalizeAiTagName(candidate.name))
+}
+
+function isAiTagCandidateAssigned(candidate: TagSuggestionCandidate) {
+  if (candidate.tag_id && selectedArticleTagIds.value.includes(candidate.tag_id)) return true
+  const matched = store.tags.find((tag) => normalizeAiTagName(tag.name) === normalizeAiTagName(candidate.name))
+  return Boolean(matched && selectedArticleTagIds.value.includes(matched.id))
+}
+
+function toggleAiTagCandidate(candidate: TagSuggestionCandidate) {
+  const key = normalizeAiTagName(candidate.name)
+  if (!key) return
+  const next = new Set(selectedAiTagNames.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  selectedAiTagNames.value = Array.from(next)
+}
+
+function clearAiTagCandidates() {
+  aiTagCandidates.value = []
+  selectedAiTagNames.value = []
+  aiTagError.value = ''
+}
+
+async function generateAiTags() {
+  const articleId = store.selectedArticle?.id
+  if (!articleId) return
+  aiTagLoading.value = true
+  aiTagError.value = ''
+  try {
+    const response = await rssApi.suggestTags(articleId)
+    if (store.selectedArticle?.id !== articleId) return
+    const seen = new Set<string>()
+    aiTagCandidates.value = response.candidates.filter((candidate) => {
+      const key = normalizeAiTagName(candidate.name)
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    selectedAiTagNames.value = aiTagCandidates.value.map((candidate) => normalizeAiTagName(candidate.name))
+    if (!aiTagCandidates.value.length) {
+      aiTagError.value = 'AI 没有返回可用的候选标签'
+    }
+  } catch (error) {
+    aiTagError.value = getErrorMessage(error, 'AI 标签生成失败，请检查 Provider 配置')
+    ElMessage.error(aiTagError.value)
+  } finally {
+    aiTagLoading.value = false
+  }
+}
+
+async function applyAiTagCandidates() {
+  if (!store.selectedArticle || !aiTagCandidates.value.length) return
+  aiTagApplying.value = true
+  try {
+    const selected = new Set(selectedAiTagNames.value)
+    const tagIds = new Set(selectedArticleTagIds.value)
+    for (const candidate of aiTagCandidates.value) {
+      if (!selected.has(normalizeAiTagName(candidate.name))) continue
+      const existing = candidate.tag_id
+        ? store.tags.find((tag) => tag.id === candidate.tag_id)
+        : store.tags.find((tag) => normalizeAiTagName(tag.name) === normalizeAiTagName(candidate.name))
+      const tag = existing ?? await store.createTag({ name: candidate.name, color: newTagColor.value })
+      tagIds.add(tag.id)
+    }
+    await updateSelectedArticleTags(Array.from(tagIds))
+    ElMessage.success('AI 标签已应用')
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '应用 AI 标签失败'))
+  } finally {
+    aiTagApplying.value = false
+  }
+}
+
 async function deleteTag(tagId: number) {
   const deletingActiveTag = activeTagId.value === tagId
   await store.deleteTag(tagId)
@@ -1648,6 +1770,57 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
+}
+
+function isBrowserExternalUrl(url: string) {
+  try {
+    const parsed = new URL(url.trim())
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol)
+  } catch {
+    return false
+  }
+}
+
+async function openExternalLink(url: string) {
+  if (!isBrowserExternalUrl(url)) return false
+
+  try {
+    if (window.rssReaderDesktop?.openExternal) {
+      const result = await window.rssReaderDesktop.openExternal(url)
+      if (!result.ok) {
+        ElMessage.error(result.message || '无法打开链接')
+        return false
+      }
+      return true
+    }
+
+    const opened = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!opened) {
+      ElMessage.error('无法打开链接')
+      return false
+    }
+    return true
+  } catch {
+    ElMessage.error('无法打开链接')
+    return false
+  }
+}
+
+function handleExternalLinkClick(event: MouseEvent) {
+  const link = event.currentTarget as HTMLAnchorElement | null
+  const href = link?.getAttribute('href') || link?.href
+  if (!href || !isBrowserExternalUrl(href)) return
+  event.preventDefault()
+  void openExternalLink(href)
+}
+
+function handleArticleContentClick(event: MouseEvent) {
+  const target = event.target as Element | null
+  const link = target?.closest('a[href]') as HTMLAnchorElement | null
+  const href = link?.getAttribute('href') || ''
+  if (!href || !isBrowserExternalUrl(href)) return
+  event.preventDefault()
+  void openExternalLink(href)
 }
 
 function safeFilename(name: string) {
@@ -2088,6 +2261,20 @@ async function exportNote() {
   gap: 6px;
   margin-bottom: 14px;
   flex: 0 0 auto;
+}
+
+.sidebar-tag-scrollbar {
+  flex: 0 1 auto;
+  max-height: min(34vh, 320px);
+  min-height: 0;
+  margin-bottom: 14px;
+}
+
+.sidebar-tag-list {
+  margin-bottom: 0;
+  align-content: start;
+  padding-right: 4px;
+  padding-bottom: 4px;
 }
 
 .sidebar-primary-link,
@@ -3042,6 +3229,74 @@ async function exportNote() {
 
 .tag-search-input {
   width: 100%;
+}
+
+.ai-tag-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--app-border) 70%, transparent 30%);
+}
+
+.ai-tag-panel-header,
+.ai-tag-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-tag-panel-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: color-mix(in srgb, currentColor 58%, transparent 42%);
+}
+
+.ai-tag-error {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--el-color-danger);
+}
+
+.ai-tag-candidate-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-tag-candidate {
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--app-border) 74%, transparent 26%);
+  border-radius: 999px;
+  padding: 6px 8px 6px 10px;
+  background: color-mix(in srgb, var(--app-surface-strong) 90%, var(--app-bg) 10%);
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  transition: all 0.18s ease;
+}
+
+.ai-tag-candidate.active {
+  border-color: color-mix(in srgb, var(--theme-accent) 48%, var(--app-border) 52%);
+  background: color-mix(in srgb, var(--theme-accent) 14%, var(--app-surface) 86%);
+  color: color-mix(in srgb, var(--theme-accent) 82%, var(--app-text) 18%);
+}
+
+.ai-tag-candidate.assigned {
+  opacity: 0.74;
+}
+
+.ai-tag-badge {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 10%, transparent 90%);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .tag-selection-list {

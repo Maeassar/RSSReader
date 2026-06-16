@@ -322,6 +322,51 @@ npm.cmd run build --prefix frontend
 
 Result: build passed. Vite/Rollup still reports existing third-party annotation and chunk-size warnings.
 
+### Follow-up Fix: External Browser Link Handling
+
+- Desktop reader links now open through the system default browser instead of creating popup windows inside the Electron app.
+- Electron exposes a small `openExternal` preload bridge backed by `shell.openExternal`, and the main window denies external `window.open` popups after handing them to the OS.
+- The article source URL, rendered article-body links, and AI summary result links all share the same external-link handler.
+
+### Verification
+
+```bash
+npm.cmd run build --prefix frontend
+```
+
+Result: build passed. Vite/Rollup still reports existing third-party annotation and chunk-size warnings.
+
+### Follow-up Feature: AI Tag Candidate Generation
+
+- Replaced the mock `/api/ai/tag-suggest/{article_id}` response with real LLM-backed tag candidate generation using the same default provider configuration as Summary.
+- Added structured tag suggestion responses with `article_id`, `candidates`, and the saved `ai_result` audit record.
+- The tag agent prompt sends article context and existing tag names so the model can reuse current tags or suggest new reusable labels.
+- The reader tag popover now includes an AI generation panel where users can generate candidates, deselect unwanted labels, and apply only the selected tags.
+- Applying AI candidates reuses the existing manual tag flow: existing tags are assigned directly, new names are created first, then the article tag list is saved.
+- Manual tag search, Enter-to-create, chip toggles, sidebar tag filters, and tag deletion remain unchanged.
+
+### Verification
+
+```bash
+python -m unittest discover backend/tests
+npm.cmd run build --prefix frontend
+```
+
+Result: both checks passed. Vite/Rollup still reports existing third-party annotation and chunk-size warnings.
+
+### Follow-up Fix: Tag Sidebar Scrolling and Chinese AI Tag UI
+
+- The left sidebar tag group is now wrapped in a bounded `el-scrollbar`, so large tag sets can scroll inside the tag section instead of being clipped.
+- The AI tag candidate panel now uses Chinese labels for the title, generate button, existing/new badges, clear/apply actions, and user-facing messages.
+
+### Verification
+
+```bash
+npm.cmd run build --prefix frontend
+```
+
+Result: build passed. Vite/Rollup still reports existing third-party annotation and chunk-size warnings.
+
 ### Follow-up Fix: Reader Tag Popover Layout and Search
 
 - The article tag popover now renders tags as compact chips instead of full-width rows.

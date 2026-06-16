@@ -10,6 +10,7 @@ declare global {
     rssReaderDesktop?: {
       apiBaseUrl: string
       platform: string
+      openExternal?: (url: string) => Promise<{ ok: boolean; message?: string }>
       saveMarkdown?: (payload: { content: string; suggestedFilename: string }) => Promise<DesktopMarkdownSaveResult>
     }
   }

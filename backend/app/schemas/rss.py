@@ -221,6 +221,18 @@ class AIResultRead(BaseModel):
     created_at: datetime
 
 
+class TagSuggestionCandidate(BaseModel):
+    name: str
+    tag_id: int | None = None
+    reason: str | None = None
+
+
+class TagSuggestionResponse(BaseModel):
+    article_id: int
+    candidates: list[TagSuggestionCandidate] = Field(default_factory=list)
+    ai_result: AIResultRead
+
+
 class SyncLogRead(BaseModel):
     id: int
     feed_id: int | None = None
