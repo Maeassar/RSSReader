@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, net: electronNet, protocol } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, net: electronNet, protocol, shell } = require('electron')
 const { spawn } = require('child_process')
 const fs = require('fs/promises')
 const http = require('http')
@@ -70,6 +70,14 @@ async function makeUniqueFilePath(targetPath) {
 }
 
 function registerDesktopIpcHandlers() {
+  ipcMain.handle('rssreader:open-external', async (_event, url) => {
+    if (!isExternalUrl(url)) {
+      return { ok: false, message: 'Unsupported external URL' }
+    }
+    await shell.openExternal(url)
+    return { ok: true }
+  })
+
   ipcMain.handle('rssreader:save-markdown', async (_event, payload) => {
     const content = typeof payload?.content === 'string' ? payload.content : ''
     const suggestedFilename = typeof payload?.suggestedFilename === 'string' && payload.suggestedFilename
@@ -98,6 +106,32 @@ function registerDesktopIpcHandlers() {
     })
     return { canceled: false, filePath: finalPath }
   })
+}
+
+function isExternalUrl(url) {
+  if (typeof url !== 'string' || !url.trim()) return false
+  try {
+    const parsed = new URL(url)
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol)
+  } catch (error) {
+    return false
+  }
+}
+
+function openExternalUrl(url) {
+  if (!isExternalUrl(url)) return false
+  shell.openExternal(url).catch((error) => {
+    console.error(`Failed to open external URL ${url}:`, error)
+  })
+  return true
+}
+
+function isSameOriginUrl(left, right) {
+  try {
+    return new URL(left).origin === new URL(right).origin
+  } catch (error) {
+    return false
+  }
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -277,6 +311,21 @@ async function createWindow() {
 
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`)
+  })
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    const currentUrl = mainWindow.webContents.getURL()
+    if (!isSameOriginUrl(url, currentUrl) && openExternalUrl(url)) {
+      return { action: 'deny' }
+    }
+    return { action: 'allow' }
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const currentUrl = mainWindow.webContents.getURL()
+    if (url !== currentUrl && !isSameOriginUrl(url, currentUrl) && openExternalUrl(url)) {
+      event.preventDefault()
+    }
   })
 
   if (isDev) {

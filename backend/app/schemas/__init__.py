@@ -27,6 +27,8 @@ from app.schemas.rss import (
     SyncLogRead,
     TagCreate,
     TagRead,
+    TagSuggestionCandidate,
+    TagSuggestionResponse,
     TagUpdate,
 )
 
@@ -59,5 +61,7 @@ __all__ = [
     "SyncLogRead",
     "TagCreate",
     "TagRead",
+    "TagSuggestionCandidate",
+    "TagSuggestionResponse",
     "TagUpdate",
 ]

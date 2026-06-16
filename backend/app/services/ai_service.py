@@ -1,5 +1,6 @@
 from app.repositories import repository
 from app.services.summary_agent import SummaryAgentError, SummaryEventHandler, SummaryOptions, summarize_with_provider
+from app.services.tag_agent import TagAgentError, suggest_tags_with_provider
 
 
 def summarize(
@@ -92,6 +93,28 @@ def translate(article_id):
 
 
 def suggest_tags(article_id):
-    repository.get_article(article_id)
-    result = "课程项目, AI, 工程实践"
-    return repository.create_ai_result(article_id, "tag_suggestion", "Suggest tags", result)
+    article = repository.get_article(article_id)
+    try:
+        provider = repository.get_default_llm_provider()
+    except ValueError as exc:
+        raise TagAgentError("No available LLM Provider is configured. Add and enable one in AI settings first.") from exc
+    tags = repository.list_tags()
+    result = suggest_tags_with_provider(article, tags, provider)
+    saved = repository.create_ai_result(
+        article_id,
+        "tag_suggestion",
+        result.prompt,
+        result.raw_text,
+        provider=provider["name"],
+        model=provider["model"],
+        input_tokens=result.usage.input_tokens,
+        output_tokens=result.usage.output_tokens,
+    )
+    return {
+        "article_id": article_id,
+        "candidates": [
+            {"name": item.name, "tag_id": item.tag_id, "reason": item.reason}
+            for item in result.candidates
+        ],
+        "ai_result": saved,
+    }

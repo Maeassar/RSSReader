@@ -6,9 +6,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.repositories import repository
-from app.schemas import AIResultRead, LLMProviderCreate, LLMProviderRead, LLMProviderUpdate, SummaryRequest
+from app.schemas import AIResultRead, LLMProviderCreate, LLMProviderRead, LLMProviderUpdate, SummaryRequest, TagSuggestionResponse
 from app.services import ai_service
 from app.services.summary_agent import SummaryAgentError
+from app.services.tag_agent import TagAgentError
 
 router = APIRouter()
 
@@ -107,6 +108,11 @@ def translate(article_id: int):
     return ai_service.translate(article_id)
 
 
-@router.post("/tag-suggest/{article_id}", response_model=AIResultRead)
+@router.post("/tag-suggest/{article_id}", response_model=TagSuggestionResponse)
 def suggest_tags(article_id: int):
-    return ai_service.suggest_tags(article_id)
+    try:
+        return ai_service.suggest_tags(article_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TagAgentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
