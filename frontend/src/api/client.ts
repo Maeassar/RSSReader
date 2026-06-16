@@ -187,9 +187,9 @@ export interface RagConfig {
   siliconflow_base_url: string
   embedding_model: string
   embedding_dim: number
-  deepseek_api_key: string
-  deepseek_base_url: string
-  deepseek_model: string
+  chat_provider_name: string
+  chat_provider_model: string
+  has_siliconflow_api_key: boolean
 }
 
 export interface AskSource {

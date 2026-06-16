@@ -3,12 +3,13 @@ RAG (Retrieval-Augmented Generation) service.
 
 Embedding: SiliconFlow BAAI/bge-m3 (1024-dim, OpenAI-compatible)
 Vector store: sqlite-vec (SQLite extension)
-Generation: DeepSeek Chat API (OpenAI-compatible)
+Generation: shared AI Provider config (OpenAI-compatible)
 
 Configuration — set these environment variables or fill in directly:
   SILICONFLOW_API_KEY: SiliconFlow API key for embeddings
-  DEEPSEEK_API_KEY   : DeepSeek API key for chat generation
-  DEEPSEEK_BASE_URL  : defaults to https://api.deepseek.com/v1
+  OPENAI_API_KEY     : shared chat provider API key
+  OPENAI_BASE_URL    : shared chat provider base URL
+  OPENAI_MODEL       : shared chat provider model
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ import sqlite_vec
 from openai import OpenAI
 
 from app.database import DB_PATH, get_connection
+from app.repositories import repository
+from app.services.secret_store import decrypt_secret
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
@@ -55,7 +58,28 @@ def get_config() -> dict:
                 defaults[row["key"]] = row["value"]
     except Exception:
         pass
+    defaults["rag_siliconflow_api_key"] = decrypt_secret(defaults.get("rag_siliconflow_api_key", ""))
+    defaults["rag_deepseek_api_key"] = decrypt_secret(defaults.get("rag_deepseek_api_key", ""))
     return defaults
+
+
+def get_chat_provider_config() -> dict:
+    """Return the default LLM Provider used by RAG chat generation."""
+    try:
+        provider = repository.get_default_llm_provider()
+        if provider.get("base_url") and provider.get("model"):
+            return provider
+    except ValueError:
+        pass
+
+    cfg = get_config()
+    return {
+        "name": "Legacy RAG Chat",
+        "base_url": cfg.get("rag_deepseek_base_url", DEEPSEEK_BASE_URL),
+        "api_key": cfg.get("rag_deepseek_api_key", ""),
+        "model": cfg.get("rag_deepseek_model", DEEPSEEK_MODEL),
+        "enabled": True,
+    }
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -270,11 +294,15 @@ def ask(question: str) -> dict:
     )
     user_prompt = f"以下是检索到的相关文章：\n\n{context}\n\n用户问题：{question}"
 
-    from openai import OpenAI
-    cfg = get_config()
-    client = OpenAI(api_key=cfg["rag_deepseek_api_key"], base_url=cfg["rag_deepseek_base_url"])
+    provider = get_chat_provider_config()
+    if not provider.get("enabled", True):
+        raise ValueError("AI Provider 未启用，请先在 AI 设置中启用通用 Provider。")
+    if not provider.get("base_url") or not provider.get("model"):
+        raise ValueError("AI Provider 缺少 Base URL 或模型名称，请先在 AI 设置中配置。")
+
+    client = OpenAI(api_key=provider.get("api_key") or "EMPTY", base_url=provider["base_url"])
     resp = client.chat.completions.create(
-        model=cfg["rag_deepseek_model"],
+        model=provider["model"],
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

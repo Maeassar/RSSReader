@@ -5,6 +5,7 @@ import sqlite3
 
 from app.database import get_connection, initialize_database
 from app.services.content_cleaner import clean_html
+from app.services.secret_store import decrypt_secret, encrypt_secret
 from app.services.webpage_extractor import extract_article_html
 
 
@@ -445,7 +446,7 @@ class SQLiteRepository:
                     data["name"],
                     data.get("provider_type") or "openai_compatible",
                     data["base_url"].rstrip("/"),
-                    data.get("api_key") or "",
+                    encrypt_secret(data.get("api_key") or ""),
                     data["model"],
                     1 if data.get("enabled", True) else 0,
                     1 if data.get("is_default") else 0,
@@ -470,6 +471,10 @@ class SQLiteRepository:
         for key, value in data.items():
             if value is None:
                 continue
+            if key == "api_key":
+                if not value:
+                    continue
+                value = encrypt_secret(value)
             if key == "base_url" and isinstance(value, str):
                 value = value.rstrip("/")
             if key in {"enabled", "is_default"}:
@@ -1013,7 +1018,7 @@ class SQLiteRepository:
             "has_api_key": bool(row["api_key"]),
         }
         if include_api_key:
-            provider["api_key"] = row["api_key"] or ""
+            provider["api_key"] = decrypt_secret(row["api_key"] or "")
         return provider
 
     def _ai_result(self, row):

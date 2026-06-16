@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from app.database import get_connection
+from app.services.secret_store import encrypt_secret
 
 router = APIRouter()
 
@@ -31,37 +32,36 @@ class RagConfig(BaseModel):
     siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
     embedding_model: str = "BAAI/bge-m3"
     embedding_dim: int = 1024
-    deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-v4-flash"
+    chat_provider_name: str = ""
+    chat_provider_model: str = ""
+    has_siliconflow_api_key: bool = False
 
 
 @router.get("/config", response_model=RagConfig)
 def get_rag_config():
-    from app.services.rag_service import get_config
+    from app.services.rag_service import get_chat_provider_config, get_config
     cfg = get_config()
+    provider = get_chat_provider_config()
     return RagConfig(
-        siliconflow_api_key=cfg["rag_siliconflow_api_key"],
+        siliconflow_api_key="",
         siliconflow_base_url=cfg["rag_siliconflow_base_url"],
         embedding_model=cfg["rag_embedding_model"],
         embedding_dim=int(cfg.get("rag_embedding_dim", 1024)),
-        deepseek_api_key=cfg["rag_deepseek_api_key"],
-        deepseek_base_url=cfg["rag_deepseek_base_url"],
-        deepseek_model=cfg["rag_deepseek_model"],
+        chat_provider_name=provider.get("name", ""),
+        chat_provider_model=provider.get("model", ""),
+        has_siliconflow_api_key=bool(cfg.get("rag_siliconflow_api_key")),
     )
 
 
 @router.put("/config", response_model=RagConfig)
 def save_rag_config(body: RagConfig):
     mapping = {
-        "rag_siliconflow_api_key": body.siliconflow_api_key,
         "rag_siliconflow_base_url": body.siliconflow_base_url,
         "rag_embedding_model": body.embedding_model,
         "rag_embedding_dim": str(body.embedding_dim),
-        "rag_deepseek_api_key": body.deepseek_api_key,
-        "rag_deepseek_base_url": body.deepseek_base_url,
-        "rag_deepseek_model": body.deepseek_model,
     }
+    if body.siliconflow_api_key:
+        mapping["rag_siliconflow_api_key"] = encrypt_secret(body.siliconflow_api_key)
     with get_connection() as conn:
         for key, value in mapping.items():
             conn.execute(
@@ -75,7 +75,7 @@ def save_rag_config(body: RagConfig):
         initialize_vec_table()
     except Exception:
         pass
-    return body
+    return get_rag_config()
 
 
 @router.post("/ask", response_model=AskResponse)

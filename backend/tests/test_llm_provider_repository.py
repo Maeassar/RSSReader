@@ -61,6 +61,17 @@ class LLMProviderRepositoryTest(unittest.TestCase):
         self.assertEqual(default_provider["name"], "Local Ollama")
         self.assertEqual(default_provider["api_key"], "ollama")
 
+        import app.database as database
+
+        with database.get_connection() as conn:
+            stored_api_key = conn.execute(
+                "SELECT api_key FROM llm_providers WHERE id = ?",
+                (provider["id"],),
+            ).fetchone()["api_key"]
+
+        self.assertNotEqual(stored_api_key, "ollama")
+        self.assertTrue(stored_api_key.startswith("enc:v1:"))
+
         self.repository.create_ai_result(
             1,
             "summary",

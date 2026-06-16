@@ -511,3 +511,11 @@
 - Added an Electron `openExternal` IPC bridge and main-window navigation/window-open guards so article links no longer create in-app popup windows.
 - Routed article source links, article-body links, and AI summary result links through the same external-link handler, with a browser fallback for frontend development.
 - Verification: `npm.cmd run build --prefix frontend` passed with the existing Rollup annotation and chunk-size warnings.
+
+## 2026-06-16 (RAG Provider sharing and API key encryption)
+
+- Used AI Coding Agent to rebase the RAG/AI configuration work onto the latest `upstream/develop`; conflicts came from newly merged AI Provider, streaming summary, and AI tag changes rather than a `main` branch base.
+- Changed RAG Chat to reuse the enabled default LLM Provider from `/api/ai/providers`, so article summary, AI tag suggestion, and RAG Chat share one Provider configuration.
+- Kept RAG Embedding settings independent, and removed the separate RAG Chat API Key/Base URL/model fields from the AI settings page.
+- Added local API Key encryption for `llm_providers.api_key` and `rag_siliconflow_api_key`; frontend copy now states that keys are encrypted and leaves existing keys unchanged when edit fields are empty.
+- Updated `update_docs/Week17_GentleCold.md` with the implementation notes, conflict reason, validation plan, and API Key handling details.
