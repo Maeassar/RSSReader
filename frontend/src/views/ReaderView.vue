@@ -720,6 +720,9 @@ const summaryDrawerRef = ref<HTMLElement | null>(null)
 const summaryResultVisible = ref(false)
 const copyDone = ref(false)
 
+type SummaryCacheEntry = { result: string; usage: string }
+const summaryCache = new Map<number, SummaryCacheEntry>()
+
 async function copySummary() {
   if (!aiResult.value) return
   const text = aiResult.value.replace(/^可信度[：:].+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
@@ -962,8 +965,9 @@ onUnmounted(() => {
 
 watch(
   () => store.selectedArticle?.id,
-  async (_newId, oldId) => {
+  async (newId, oldId) => {
     if (oldId !== undefined) {
+      saveSummaryToCache(oldId)
       try {
         await flushNote({ articleId: oldId, content: note.value })
       } catch {
@@ -975,6 +979,22 @@ watch(
     clearSummaryResult()
     summaryDrawerOpen.value = false
     await loadNote()
+    if (newId !== undefined) {
+      const cached = summaryCache.get(newId)
+      if (cached) {
+        aiResult.value = cached.result
+        summaryUsage.value = cached.usage
+        summaryResultVisible.value = true
+      } else {
+        const remote = await rssApi.getCachedSummary(newId)
+        if (remote?.result) {
+          aiResult.value = remote.result
+          summaryUsage.value = `${remote.input_tokens} 输入 / ${remote.output_tokens} 输出 tokens`
+          summaryResultVisible.value = true
+          summaryCache.set(newId, { result: aiResult.value, usage: summaryUsage.value })
+        }
+      }
+    }
   }
 )
 watch(note, () => {
@@ -1908,6 +1928,12 @@ function renderMarkdownInline(value: string, options: { allowLinks?: boolean } =
   return html
 }
 
+function saveSummaryToCache(articleId: number) {
+  if (aiResult.value) {
+    summaryCache.set(articleId, { result: aiResult.value, usage: summaryUsage.value })
+  }
+}
+
 function clearSummaryResult() {
   aiResult.value = ''
   summaryUsage.value = ''
@@ -1941,6 +1967,35 @@ async function runSummary() {
     summaryDrawerHeight.value = Math.min(maxH, Math.max(MIN_RUNNING_HEIGHT, summaryDrawerHeight.value))
     summaryDrawerRef.value?.style.setProperty('--drawer-height', `${summaryDrawerHeight.value}px`)
   }
+
+  // 检查文章是否无正文或正文过短，如果是则先尝试拉取原文
+  const article = store.selectedArticle
+  const contentText = article?.cleaned_html?.trim() || article?.raw_html?.trim() || article?.cleaned_markdown?.trim() || ''
+  const MIN_CONTENT_LENGTH = 280
+  const hasEnoughContent = contentText.length >= MIN_CONTENT_LENGTH
+  if (!hasEnoughContent && article?.url) {
+    appendSummaryStep({
+      type: 'fetch_content',
+      title: '拉取原文',
+      detail: '文章暂无正文，正在从源网页抓取完整内容...'
+    })
+    try {
+      const refreshed = await rssApi.refreshArticleContent(articleId)
+      store.replaceArticle(refreshed)
+      appendSummaryStep({
+        type: 'fetch_done',
+        title: '原文拉取完成',
+        detail: '已成功获取原文内容，开始生成摘要。'
+      })
+    } catch (error) {
+      appendSummaryStep({
+        type: 'fetch_failed',
+        title: '原文拉取失败',
+        detail: getErrorMessage(error, '无法从源网页获取内容，将基于标题生成摘要')
+      })
+    }
+  }
+
   try {
     await rssApi.streamSummary(articleId, {
       provider_id: summaryProviderId.value,

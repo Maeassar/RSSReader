@@ -339,9 +339,38 @@ npx vue-tsc --noEmit
 - 折叠/展开箭头功能正常。
 - 点击生成摘要，确认按钮无 MagicStick 图标，步骤流 active 圆点有向外扩散波纹动画，done 步骤颜色变浅。
 
+## 本周新增：摘要持久化与原文拉取
+
+### 23. 切换文章后摘要保留
+
+切换文章后再返回，摘要不再被清除，会自动恢复上次结果。
+
+**实现方式：**
+
+- `ReaderView.vue` 新增 `summaryCache: Map<articleId, { result, usage }>` 内存缓存。
+- 离开文章时调用 `saveSummaryToCache(oldId)` 将当前摘要存入 Map。
+- 进入文章时按优先级恢复：
+  1. 从内存 Map 恢复（同一会话内最快）
+  2. 内存无缓存则调用 `POST /ai/summary/{id}?refresh=false` 查询后端数据库已有记录
+- `client.ts` 新增 `getCachedSummary(articleId)` 方法，失败时静默返回 `null`，不影响后续流程。
+
+### 24. 正文不足时自动拉取原文再生成摘要
+
+点击"生成摘要"时，若文章正文字符数不足 280（与后端 `MIN_CONTENT_TEXT_LENGTH` 保持一致），且文章有 `url` 字段，会先尝试从原文链接拉取完整正文。
+
+**执行流程（步骤流可见）：**
+
+1. 「拉取原文」— 检测到正文过短，向后端发起 `POST /articles/{id}/refresh-content`
+2. 拉取成功 → 「原文拉取完成」— 更新 store 中的文章内容，继续生成摘要
+3. 拉取失败 → 「原文拉取失败」— 显示错误原因，仍继续尝试基于现有内容生成摘要
+
+**已知限制：** TechCrunch、OpenAI 等启用 Cloudflare 的站点会返回 403，后端服务端 HTTP 拉取无法绕过，此类站点的摘要仍只能基于 RSS 已有内容生成。
+
 ## 当前限制
 
 - 时区处理依赖后端系统本地时区；若后端部署在不同时区的服务器上，需额外传入客户端时区偏移。
 - 请求异常统计目前只覆盖摘要功能，translate 和 tag_suggestion 暂未接入 `status='failed'` 写入。
 - 摘要步骤流圆点波纹动画为 CSS `::before` 伪元素实现，不支持在 `overflow: hidden` 父容器内显示完整波纹（需父容器 `overflow: visible`）。
+- 摘要内存缓存在页面刷新后清空，需再次查询后端数据库恢复。
+- 原文拉取对反爬保护站点无效，需要浏览器级渲染方案（Playwright/WebView）才能稳定补全。
 

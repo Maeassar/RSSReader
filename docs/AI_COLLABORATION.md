@@ -512,7 +512,13 @@
 - Routed article source links, article-body links, and AI summary result links through the same external-link handler, with a browser fallback for frontend development.
 - Verification: `npm.cmd run build --prefix frontend` passed with the existing Rollup annotation and chunk-size warnings.
 
-## 2026-06-16 (RAG Provider sharing and API key encryption)
+## 2026-06-22（Week16 摘要持久化与原文拉取）
+
+- 使用 AI Coding Agent 协助完成徐治平负责的 Week16 摘要持久化与原文拉取功能。
+- 切换文章后再返回，摘要不再被清除：新增 `summaryCache` 内存 Map，离开文章时保存当前摘要，切回时优先从内存恢复，内存无缓存则调用 `POST /ai/summary/{id}` 传 `refresh: false` 查询后端已有记录；`client.ts` 新增 `getCachedSummary()` 方法。
+- 正文不足 280 字符时，点击"生成摘要"会先尝试调用 `POST /articles/{id}/refresh-content` 从原文链接拉取完整正文，拉取成功后更新 store 内容再生成摘要；拉取失败时在步骤流显示原因并继续生成。
+- 实测确认 TechCrunch 等 Cloudflare 防护站点的原文拉取会返回 `Unable to load full article content from the source page`，此类站点暂时只能基于 RSS 已有内容生成摘要，后续需要浏览器级渲染方案才能绕过。
+- 当前限制：摘要内存缓存在页面刷新后清空；原文拉取对启用机器人防护的站点无效。
 
 - Used AI Coding Agent to rebase the RAG/AI configuration work onto the latest `upstream/develop`; conflicts came from newly merged AI Provider, streaming summary, and AI tag changes rather than a `main` branch base.
 - Changed RAG Chat to reuse the enabled default LLM Provider from `/api/ai/providers`, so article summary, AI tag suggestion, and RAG Chat share one Provider configuration.

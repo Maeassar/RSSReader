@@ -353,6 +353,10 @@ export const rssApi = {
     api.get<Blob>(`/export/articles/${articleId}/markdown`, { responseType: 'blob' }).then((res) => res.data),
   exportBatchDigestMarkdown: (payload: BatchDigestExportRequest) =>
     api.post<BatchDigestExportResponse>('/export/digests/markdown', payload).then((res) => res.data),
+  getCachedSummary: (articleId: number) =>
+    api.post<AIResult>(`/ai/summary/${articleId}`, { refresh: false }, { timeout: 10000 })
+      .then((res) => res.data)
+      .catch(() => null),
   summary: (
     articleId: number,
     payload?: SummaryRequestPayload
