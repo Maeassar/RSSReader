@@ -22,3 +22,4 @@ release/
 *.sqlite
 *.sqlite3
 *.log
+img.png

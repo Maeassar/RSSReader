@@ -403,9 +403,25 @@
               </div>
             </div>
           </el-popover>
-          <el-tooltip content="翻译" placement="top">
-            <el-button class="toolbar-icon-button" :icon="Switch" circle @click="runTranslate" />
-          </el-tooltip>
+          <div class="toolbar-translate-group">
+            <el-tooltip :content="translatingAll ? '翻译中…' : `翻译全文 (${currentTranslationLanguageLabel})`" placement="top">
+              <el-button class="toolbar-icon-button" :icon="Switch" circle :loading="translatingAll" @click="runTranslate" />
+            </el-tooltip>
+            <el-dropdown trigger="click" @command="handleTranslationCommand">
+              <el-button class="toolbar-icon-button toolbar-translate-caret" circle>
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item disabled>目标语言</el-dropdown-item>
+                  <el-dropdown-item v-for="opt in summaryLanguageOptions" :key="opt.value" :command="`lang:${opt.value}`">
+                    {{ translationLanguage === opt.value ? '✓ ' : '' }}{{ opt.label }}
+                  </el-dropdown-item>
+                  <el-dropdown-item divided command="clear-all" :disabled="!hasAnyTranslation">清除全部翻译</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
           <el-popover
             v-model:visible="notePopoverOpen"
             placement="bottom"
@@ -476,7 +492,82 @@
                 <span v-if="readerPublishedAt(store.selectedArticle)">{{ readerPublishedAt(store.selectedArticle) }}</span>
               </div>
             </header>
-            <div ref="articleBodyRef" class="article-body" v-html="renderedArticleHtml" @click="handleArticleContentClick"></div>
+            <div ref="articleBodyRef" class="article-body article-body-blocks" @click="handleArticleContentClick">
+              <div
+                v-for="(block, idx) in articleRenderedBlocks"
+                :key="idx"
+                class="article-block"
+                :class="{ 'article-block-translatable': block.translatable }"
+              >
+                <template v-if="block.translatable">
+                  <!-- 有译文且替换模式：直接显示译文 -->
+                  <div
+                    v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.text && paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]!.mode === 'translation'"
+                    class="article-block-content article-block-translated"
+                  >
+                    <div class="translation-badge">
+                      <el-icon><Switch /></el-icon>
+                      <span>译文</span>
+                    </div>
+                    <div v-html="renderedParagraphTranslation(paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]!.text)"></div>
+                  </div>
+                  <!-- 双语对照模式：原文 + 译文两行 -->
+                  <div
+                    v-else-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.text && paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]!.mode === 'comparison'"
+                    class="article-block-comparison"
+                  >
+                    <div class="comparison-row">
+                      <span class="comparison-label original-label">原文</span>
+                      <div class="article-block-content article-block-original" v-html="block.html"></div>
+                    </div>
+                    <div class="comparison-divider"></div>
+                    <div class="comparison-row">
+                      <span class="comparison-label translation-label">译文</span>
+                      <div class="para-translation article-body" v-html="renderedParagraphTranslation(paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]!.text)"></div>
+                    </div>
+                  </div>
+                  <!-- 无译文：显示原文 -->
+                  <div v-else class="article-block-content" v-html="block.html"></div>
+                  <!-- 操作按钮区 -->
+                  <div class="article-block-translate">
+                    <button
+                      v-if="!paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.text"
+                      class="para-translate-btn"
+                      :class="{ loading: paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading }"
+                      :disabled="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading || translatingAll"
+                      @click.stop="translateParagraph(store.selectedArticle!.id, idx, block.text)"
+                    >
+                      <el-icon v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading" class="is-loading"><Loading /></el-icon>
+                      <el-icon v-else><Switch /></el-icon>
+                      <span v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading">翻译中…</span>
+                      <span v-else>翻译</span>
+                    </button>
+                    <template v-else>
+                      <button
+                        class="para-translate-btn"
+                        :class="{ loading: paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading }"
+                        :disabled="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading || translatingAll"
+                        @click.stop="translateParagraph(store.selectedArticle!.id, idx, block.text)"
+                      >
+                        <el-icon v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading" class="is-loading"><Loading /></el-icon>
+                        <el-icon v-else><Refresh /></el-icon>
+                        <span v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading">翻译中…</span>
+                        <span v-else>重新翻译</span>
+                      </button>
+                      <button
+                        class="para-translate-btn mode-btn"
+                        @click.stop="toggleParagraphMode(store.selectedArticle!.id, idx)"
+                      >
+                        <el-icon><CopyDocument /></el-icon>
+                        <span v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]!.mode === 'translation'">双语对照</span>
+                        <span v-else>仅译文</span>
+                      </button>
+                    </template>
+                  </div>
+                </template>
+                <div v-else class="article-block-content" v-html="block.html"></div>
+              </div>
+            </div>
             </div>
         </div>
 
@@ -643,7 +734,7 @@
 </template>
 
 <script setup lang="ts">
-import { Check, Close, CollectionTag, CopyDocument, Delete, Download, EditPen, Files, Loading, MagicStick, MoreFilled, Plus, Refresh, Star, Switch, Top } from '@element-plus/icons-vue'
+import { ArrowDown, Check, Close, CollectionTag, CopyDocument, Delete, Download, EditPen, Files, Loading, MagicStick, MoreFilled, Plus, Refresh, Star, Switch, Top } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -719,6 +810,11 @@ const summaryStepItems = ref<SummaryThoughtStep[]>([])
 const summaryDrawerRef = ref<HTMLElement | null>(null)
 const summaryResultVisible = ref(false)
 const copyDone = ref(false)
+
+// 翻译相关状态
+const paragraphTranslations = ref<Record<string, { text: string; loading: boolean; mode: 'translation' | 'comparison' }>>({})
+const translatingAll = ref(false)
+const translationLanguage = ref<string>(detectSystemLanguage())
 
 type SummaryCacheEntry = { result: string; usage: string }
 const summaryCache = new Map<number, SummaryCacheEntry>()
@@ -822,6 +918,51 @@ const renderedArticleHtml = computed(() => {
   if (primaryContent) return renderRichArticleContent(primaryContent, article.cleaned_markdown)
   if (article.summary?.trim()) return `<p>${escapeHtml(article.summary)}</p>`
   return '<p>这篇文章暂时没有可展示的正文内容。</p>'
+})
+
+// 正文可翻译块：用于逐段翻译。优先解析 cleaned_markdown，回退到 summary。
+const articleContentBlocks = computed(() => {
+  const article = store.selectedArticle
+  if (!article) return [] as { text: string; translatable: boolean }[]
+  const md = article.cleaned_markdown?.trim() || ''
+  if (md) return parseTranslatableBlocks(md)
+  const summary = article.summary?.trim() || ''
+  if (summary) return [{ text: summary, translatable: true }]
+  return []
+})
+
+// 正文渲染块：分块 v-for 渲染（保留原 v-html 整体效果，同时支持逐段翻译）
+const articleRenderedBlocks = computed(() => {
+  const article = store.selectedArticle
+  if (!article) return [] as { html: string; text: string; translatable: boolean; isHtml: boolean }[]
+  const primaryContent = article.cleaned_html?.trim() || article.raw_html?.trim() || ''
+  // 原始 HTML 内容（非 markdown）：无法可靠分块，退化为单块整体渲染
+  if (primaryContent && !article.cleaned_markdown?.trim()) {
+    return [{ html: primaryContent, text: article.summary?.trim() || '', translatable: !!article.summary?.trim(), isHtml: true }]
+  }
+  const md = article.cleaned_markdown?.trim() || article.summary?.trim() || ''
+  if (!md) return [{ html: '<p>这篇文章暂时没有可展示的正文内容。</p>', text: '', translatable: false, isHtml: false }]
+  const normalized = md.replace(/\r\n/g, '\n').trim()
+  const blocks = normalized.split(/\n{2,}/).filter(Boolean)
+  return blocks.map((block) => {
+    const isCodeFence = block.startsWith('```')
+    const isHr = /^[-*_]{3,}\s*$/.test(block.trim())
+    const isImageOnly = !block.replace(/!\[[^\]]*]\([^)]+\)/g, '').trim()
+    const translatable = !isCodeFence && !isHr && !isImageOnly && block.trim().length > 0
+    return { html: renderMarkdownBlock(block), text: block, translatable, isHtml: false }
+  })
+})
+
+const currentTranslationLanguageLabel = computed(() => {
+  return summaryLanguageOptions.find((o: { label: string; value: string }) => o.value === translationLanguage.value)?.label ?? translationLanguage.value
+})
+
+const hasAnyTranslation = computed(() => {
+  if (!store.selectedArticle) return false
+  const articleId = store.selectedArticle.id
+  return Object.keys(paragraphTranslations.value).some((key) => {
+    return key.startsWith(`${articleId}:`) && paragraphTranslations.value[key]?.text
+  })
 })
 
 const selectedArticleTagIds = computed(() => store.selectedArticle?.tag_ids ?? [])
@@ -1006,7 +1147,7 @@ watch(notePopoverOpen, (open) => {
     void flushNote().catch(() => undefined)
   }
 })
-watch(renderedArticleHtml, decorateArticleLinks, { flush: 'post' })
+watch(articleRenderedBlocks, decorateArticleLinks, { flush: 'post' })
 watch(filteredArticles, () => {
   void ensureVisibleSelection()
 })
@@ -1914,6 +2055,20 @@ function renderMarkdownBlock(block: string): string {
   return `<p>${lines.map((line) => renderMarkdownInline(line)).join('<br />')}</p>`
 }
 
+// 简易 Markdown 块解析：按双换行切块，识别代码块/ hr 不可翻译
+function parseTranslatableBlocks(markdown: string): { text: string; translatable: boolean }[] {
+  const normalized = markdown.replace(/\r\n/g, '\n').trim()
+  if (!normalized) return []
+  const blocks = normalized.split(/\n{2,}/).filter(Boolean)
+  return blocks.map((block) => {
+    const isCodeFence = block.startsWith('```')
+    const isHr = /^[-*_]{3,}\s*$/.test(block.trim())
+    const isImageOnly = !block.replace(/!\[[^\]]*]\([^)]+\)/g, '').trim()
+    const translatable = !isCodeFence && !isHr && !isImageOnly && block.trim().length > 0
+    return { text: block, translatable }
+  }).filter((b) => b.translatable || b.text.trim())
+}
+
 function renderMarkdownInline(value: string, options: { allowLinks?: boolean } = {}) {
   let html = escapeHtml(value)
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
@@ -2129,10 +2284,106 @@ function formatElapsed(value: number) {
   return `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}s`
 }
 
-async function runTranslate() {
+// 段落键：按文章 id + 段落索引生成
+function paragraphKey(articleId: number, index: number) {
+  return `${articleId}:${index}`
+}
+
+// 渲染单段译文为 HTML
+function renderedParagraphTranslation(text: string): string {
+  if (!text) return ''
+  return markdownToHtml(text)
+}
+
+// 翻译正文中的单一段落
+async function translateParagraph(articleId: number, index: number, sourceText: string) {
+  const key = paragraphKey(articleId, index)
+  const prev = paragraphTranslations.value[key]
+  if (prev?.loading) return
+  paragraphTranslations.value = {
+    ...paragraphTranslations.value,
+    [key]: { text: prev?.text ?? '', loading: true, mode: prev?.mode ?? 'translation' },
+  }
+  try {
+    const res = await rssApi.translateSegment({
+      text: sourceText,
+      provider_id: summaryProviderId.value,
+      target_language: translationLanguage.value,
+      source_language: 'auto',
+      preserve_markdown: true,
+    })
+    paragraphTranslations.value = {
+      ...paragraphTranslations.value,
+      [key]: { text: res.text, loading: false, mode: 'translation' },
+    }
+  } catch (error) {
+    paragraphTranslations.value = {
+      ...paragraphTranslations.value,
+      [key]: { text: prev?.text ?? '', loading: false, mode: prev?.mode ?? 'translation' },
+    }
+    ElMessage.error(getErrorMessage(error, '该段翻译失败，请检查 Provider 配置'))
+  }
+}
+
+// 切换某段译文的展示模式
+function toggleParagraphMode(articleId: number, index: number) {
+  const key = paragraphKey(articleId, index)
+  const entry = paragraphTranslations.value[key]
+  if (!entry) return
+  paragraphTranslations.value = {
+    ...paragraphTranslations.value,
+    [key]: { ...entry, mode: entry.mode === 'translation' ? 'comparison' : 'translation' },
+  }
+}
+
+// 清除当前文章的所有翻译
+function clearAllTranslations() {
   if (!store.selectedArticle) return
-  const data = await rssApi.translate(store.selectedArticle.id)
-  aiResult.value = data.result
+  const articleId = store.selectedArticle.id
+  const next: typeof paragraphTranslations.value = {}
+  for (const [key, value] of Object.entries(paragraphTranslations.value)) {
+    if (!key.startsWith(`${articleId}:`)) {
+      next[key] = value
+    }
+  }
+  paragraphTranslations.value = next
+  ElMessage.success('已清除全部翻译')
+}
+
+// 处理翻译下拉菜单命令
+function handleTranslationCommand(command: string) {
+  if (command.startsWith('lang:')) {
+    translationLanguage.value = command.slice(5)
+    const label = summaryLanguageOptions.find((o: { label: string; value: string }) => o.value === translationLanguage.value)?.label ?? translationLanguage.value
+    ElMessage.success(`目标语言已设为 ${label}`)
+  } else if (command === 'clear-all') {
+    clearAllTranslations()
+  }
+}
+
+// 顶部"翻译全文"按钮：逐段翻译所有可翻译段落
+async function runTranslate() {
+  const article = store.selectedArticle
+  if (!article) return
+  const blocks = articleContentBlocks.value
+  if (!blocks.length) {
+    ElMessage.warning('当前文章没有可翻译的正文段落')
+    return
+  }
+  if (translatingAll.value) return
+  translatingAll.value = true
+  try {
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i]
+      if (!b.translatable || !b.text.trim()) continue
+      const key = paragraphKey(article.id, i)
+      if (paragraphTranslations.value[key]?.text) continue
+      await translateParagraph(article.id, i, b.text)
+    }
+    ElMessage.success('全文翻译完成')
+  } finally {
+    translatingAll.value = false
+  }
 }
 
 async function syncAll() {
@@ -3988,6 +4239,228 @@ async function exportNote() {
 
   .feed-manager-overlay {
     grid-column: 1 / -1;
+  }
+}
+
+/* ===== Translation UI (参考现有设计风格统一优化) ===== */
+
+/* ---- 正文分块布局 ---- */
+.article-body-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.article-block {
+  position: relative;
+  padding: 0;
+  border-radius: 12px;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* 可翻译段落：hover 时像 article-card 一样有微妙的背景变化 */
+.article-block-translatable {
+  padding: 8px 12px;
+  margin: 0 -12px;
+}
+
+.article-block-translatable:hover {
+  background: color-mix(in srgb, var(--app-surface-strong) 60%, var(--app-bg) 40%);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--app-text) 4%, transparent 96%);
+}
+
+/* ---- 译文替换模式：翻译标识徽章 ---- */
+/* 参考 .summary-tag 风格：pill 形状、细边框、主题色点缀 */
+.article-block-translated {
+  position: relative;
+}
+
+.translation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--theme-accent) 80%, var(--app-text) 20%);
+  background: color-mix(in srgb, var(--theme-accent) 8%, var(--app-surface) 92%);
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 30%, var(--app-border) 70%);
+  border-radius: 999px;
+}
+
+.translation-badge .el-icon {
+  font-size: 13px;
+}
+
+/* ---- 双语对照模式：卡片式分隔 ---- */
+/* 参考 article-card 的卡片风格，原文译文各自成卡 */
+.article-block-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.comparison-row {
+  position: relative;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--app-border) 60%, transparent 40%);
+  background: color-mix(in srgb, var(--app-surface-strong) 50%, var(--app-bg) 50%);
+}
+
+.comparison-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 10px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border-radius: 999px;
+  line-height: 1.4;
+}
+
+.original-label {
+  color: color-mix(in srgb, var(--app-text) 50%, transparent 50%);
+  background: color-mix(in srgb, var(--app-border) 15%, var(--app-surface) 85%);
+  border: 1px solid color-mix(in srgb, var(--app-border) 45%, transparent 55%);
+}
+
+.translation-label {
+  color: color-mix(in srgb, var(--theme-accent) 85%, var(--app-text) 15%);
+  background: color-mix(in srgb, var(--theme-accent) 10%, var(--app-surface) 90%);
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 30%, var(--app-border) 70%);
+}
+
+/* 去掉简单横线，用间距和卡片背景自然分隔 */
+.comparison-divider {
+  display: none;
+}
+
+/* ---- 翻译操作按钮区 ---- */
+/* 参考 .sidebar-primary-link 风格：pill 形状、hover 背景变化 */
+.article-block-translate {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.article-block-translatable:hover .article-block-translate {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.para-translate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--app-text) 60%, transparent 40%);
+  background: color-mix(in srgb, var(--app-surface-strong) 90%, var(--app-bg) 10%);
+  border: 1px solid color-mix(in srgb, var(--app-border) 55%, transparent 45%);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.para-translate-btn:hover:not(:disabled) {
+  color: color-mix(in srgb, var(--theme-accent) 90%, var(--app-text) 10%);
+  border-color: color-mix(in srgb, var(--theme-accent) 50%, var(--app-border) 50%);
+  background: color-mix(in srgb, var(--theme-accent) 12%, var(--app-surface) 88%);
+}
+
+.para-translate-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.para-translate-btn .el-icon {
+  font-size: 13px;
+}
+
+/* 模式切换按钮：更 subtle 的样式 */
+.para-translate-btn.mode-btn {
+  color: color-mix(in srgb, var(--app-text) 45%, transparent 55%);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--app-border) 40%, transparent 60%);
+}
+
+.para-translate-btn.mode-btn:hover {
+  color: color-mix(in srgb, var(--theme-accent) 80%, var(--app-text) 20%);
+  border-color: color-mix(in srgb, var(--theme-accent) 45%, var(--app-border) 55%);
+  background: color-mix(in srgb, var(--theme-accent) 6%, transparent 94%);
+}
+
+/* ---- 译文显示区域 ---- */
+/* 参考 article-card 风格：圆角卡片、边框、柔和背景 */
+.para-translation {
+  margin: 0;
+  padding: 12px 16px;
+  color: inherit;
+  background: color-mix(in srgb, var(--theme-accent) 5%, var(--app-surface-strong) 95%);
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 18%, var(--app-border) 82%);
+  border-radius: 10px;
+}
+
+/* 清除原文和译文内部的末段边距 */
+.article-block-original :deep(p:last-child),
+.article-block-original :deep(ul:last-child),
+.article-block-original :deep(ol:last-child),
+.article-block-original :deep(blockquote:last-child),
+.para-translation :deep(p:last-child),
+.para-translation :deep(ul:last-child),
+.para-translation :deep(ol:last-child),
+.para-translation :deep(blockquote:last-child) {
+  margin-bottom: 0;
+}
+
+.para-translation :deep(p:first-child),
+.para-translation :deep(ul:first-child),
+.para-translation :deep(ol:first-child),
+.para-translation :deep(blockquote:first-child) {
+  margin-top: 0;
+}
+
+/* ---- 工具栏翻译按钮组 ---- */
+.toolbar-translate-group {
+  display: inline-flex;
+  align-items: center;
+}
+
+.toolbar-translate-caret {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  padding: 0;
+  --el-button-bg-color: transparent;
+  --el-button-border-color: transparent;
+  --el-button-text-color: color-mix(in srgb, currentColor 45%, transparent 55%);
+  --el-button-hover-bg-color: color-mix(in srgb, var(--app-border) 25%, transparent 75%);
+  --el-button-hover-border-color: transparent;
+  --el-button-hover-text-color: color-mix(in srgb, var(--app-text) 75%, transparent 25%);
+}
+
+.toolbar-translate-caret :deep(.el-icon) {
+  font-size: 11px;
+}
+
+/* ---- 响应式：移动端按钮始终可见 ---- */
+@media (max-width: 768px) {
+  .article-block-translate {
+    opacity: 0.85;
+    transform: translateY(0);
   }
 }
 </style>
