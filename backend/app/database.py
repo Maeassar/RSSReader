@@ -104,6 +104,45 @@ def _migrate_ai_tables(conn: sqlite3.Connection) -> None:
         if column not in ai_columns:
             conn.execute(statement)
 
+    # Migrate ai_results foreign key from ON DELETE CASCADE to ON DELETE SET NULL
+    # so token records survive when feeds/entries are deleted.
+    create_sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_results'"
+    ).fetchone()
+    if create_sql and "ON DELETE CASCADE" in create_sql[0]:
+        conn.execute("ALTER TABLE ai_results RENAME TO ai_results_old")
+        conn.execute(
+            """
+            CREATE TABLE ai_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id INTEGER,
+                task_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'success',
+                provider TEXT,
+                model TEXT,
+                prompt TEXT NOT NULL DEFAULT '',
+                result TEXT NOT NULL,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_results
+                (id, entry_id, task_type, status, provider, model, prompt, result,
+                 input_tokens, output_tokens, created_at)
+            SELECT id, entry_id, task_type, status, provider, model, prompt, result,
+                   input_tokens, output_tokens, created_at
+            FROM ai_results_old
+            """
+        )
+        conn.execute("DROP TABLE ai_results_old")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_results_task_type ON ai_results(task_type)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_results_provider_model ON ai_results(provider, model)")
+
     provider_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(llm_providers)").fetchall()
     }

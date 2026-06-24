@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS article_tags (
 
 CREATE TABLE IF NOT EXISTS ai_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_id INTEGER NOT NULL,
+    entry_id INTEGER,
     task_type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'success',
     provider TEXT,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS ai_results (
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+    FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS llm_providers (
