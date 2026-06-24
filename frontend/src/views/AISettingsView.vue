@@ -140,13 +140,92 @@
         </el-form-item>
       </el-form>
     </section>
+
+    <section class="panel translation-panel">
+      <h2 class="section-title">翻译模型配置</h2>
+      <el-alert
+        title="翻译模型独立于摘要、标签和 RAG Chat 的 AI Provider。可配置 Hy-MT2、Qwen 或任意 OpenAI-compatible 翻译模型。"
+        type="info"
+        :closable="false"
+      />
+      <div class="active-provider-bar translation-provider-bar">
+        <div class="active-provider-copy">
+          <span class="active-provider-label">当前翻译模型</span>
+          <strong>{{ defaultTranslationProvider?.name || '未选择翻译 Provider' }}</strong>
+          <span>{{ defaultTranslationProvider?.model || '请新增并启用一个翻译 Provider' }}</span>
+        </div>
+      </div>
+
+      <el-form label-width="120px" class="settings-form">
+        <el-form-item label="快速模板">
+          <el-segmented v-model="translationTemplate" :options="translationTemplates" @change="applyTranslationTemplate" />
+        </el-form-item>
+        <el-form-item label="Provider">
+          <el-input v-model="translationProviderForm.name" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="translationProviderForm.provider_type" style="width: 220px">
+            <el-option label="OpenAI Compatible" value="openai_compatible" />
+            <el-option label="vLLM Local" value="vllm" />
+            <el-option label="Ollama" value="ollama" />
+            <el-option label="Custom" value="custom" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Base URL">
+          <el-input v-model="translationProviderForm.baseUrl" />
+        </el-form-item>
+        <el-form-item label="API Key">
+          <el-input
+            v-model="translationProviderForm.apiKey"
+            type="password"
+            show-password
+            :placeholder="editingTranslationProviderHasApiKey ? '已加密保存，留空则不修改' : '本地加密保存'"
+          />
+          <span class="field-hint">腾讯 TokenHub / OpenAI-compatible API Key 可填在这里。</span>
+        </el-form-item>
+        <el-form-item label="Model">
+          <el-input v-model="translationProviderForm.model" />
+        </el-form-item>
+        <el-form-item>
+          <el-switch v-model="translationProviderForm.enabled" active-text="启用" />
+          <el-switch v-model="translationProviderForm.isDefault" active-text="默认" style="margin-left: 18px" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="savingTranslationProvider" @click="saveTranslationProvider">{{ editingTranslationProviderId ? '更新翻译 Provider' : '新增翻译 Provider' }}</el-button>
+          <el-button @click="resetTranslationProviderForm">新建</el-button>
+        </el-form-item>
+      </el-form>
+
+      <el-table :data="translationProviders" size="small" class="provider-table">
+        <el-table-column prop="name" label="Provider" min-width="160" />
+        <el-table-column prop="provider_type" label="类型" width="150" />
+        <el-table-column prop="model" label="模型" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="base_url" label="Base URL" min-width="220" show-overflow-tooltip />
+        <el-table-column label="状态" width="190">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_default" size="small">默认</el-tag>
+            <el-tag v-if="row.has_api_key" size="small" type="warning">Key 已加密</el-tag>
+            <el-tag v-if="row.enabled" size="small" type="success">启用</el-tag>
+            <el-tag v-else size="small" type="info">停用</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="editTranslationProvider(row)">编辑</el-button>
+            <el-button link type="success" :disabled="row.is_default || !row.enabled" @click="setDefaultTranslationProvider(row)">选用</el-button>
+            <el-button link type="danger" @click="removeTranslationProvider(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </section>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { rssApi, type LLMProvider, type LLMProviderType, type RagConfig, getErrorMessage } from '../api/client'
+import { rssApi, type LLMProvider, type LLMProviderType, type RagConfig, type TranslationProvider, getErrorMessage } from '../api/client'
 
 const RAG_DEFAULTS = {
   siliconflow_base_url: 'e.g. https://api.siliconflow.cn/v1',
@@ -155,14 +234,21 @@ const RAG_DEFAULTS = {
 
 const providerTemplates = ['vLLM Qwen3-8B', 'Ollama', 'OpenAI Compatible']
 const providerTemplate = ref('vLLM Qwen3-8B')
+const translationTemplates = ['Tencent Hy-MT2', 'vLLM Qwen3-8B', 'Ollama', 'OpenAI Compatible']
+const translationTemplate = ref('Tencent Hy-MT2')
 
 const providers = ref<LLMProvider[]>([])
+const translationProviders = ref<TranslationProvider[]>([])
 const selectedProviderId = ref<number | null>(null)
 const editingProviderId = ref<number | null>(null)
 const editingProviderHasApiKey = ref(false)
 const savingProvider = ref(false)
 const switchingProvider = ref(false)
+const editingTranslationProviderId = ref<number | null>(null)
+const editingTranslationProviderHasApiKey = ref(false)
+const savingTranslationProvider = ref(false)
 const defaultProvider = computed(() => providers.value.find((item) => item.enabled && item.is_default) || providers.value.find((item) => item.enabled))
+const defaultTranslationProvider = computed(() => translationProviders.value.find((item) => item.enabled && item.is_default) || translationProviders.value.find((item) => item.enabled))
 
 const provider = reactive({
   name: 'Local vLLM Qwen3-8B',
@@ -170,6 +256,16 @@ const provider = reactive({
   baseUrl: 'http://127.0.0.1:8001/v1',
   apiKey: '',
   model: 'Qwen/Qwen3-8B',
+  enabled: true,
+  isDefault: true
+})
+
+const translationProviderForm = reactive({
+  name: 'Tencent Hy-MT2',
+  provider_type: 'openai_compatible' as LLMProviderType,
+  baseUrl: 'https://tokenhub.tencentmaas.com/v1',
+  apiKey: '',
+  model: 'hy-mt2-pro',
   enabled: true,
   isDefault: true
 })
@@ -189,6 +285,7 @@ const saving = ref(false)
 onMounted(async () => {
   try {
     await loadProviders()
+    await loadTranslationProviders()
     const cfg = await rssApi.getRagConfig()
     Object.assign(rag, cfg)
   } catch (e: unknown) {
@@ -202,6 +299,10 @@ async function loadProviders() {
   selectedProviderId.value = current?.id ?? null
   rag.chat_provider_name = current?.name || rag.chat_provider_name
   rag.chat_provider_model = current?.model || rag.chat_provider_model
+}
+
+async function loadTranslationProviders() {
+  translationProviders.value = await rssApi.translationProviders()
 }
 
 function providerOptionLabel(item: LLMProvider) {
@@ -309,7 +410,7 @@ async function saveProvider() {
       api_key: provider.apiKey,
       model: provider.model,
       enabled: provider.enabled,
-      is_default: provider.isDefault
+      is_default: provider.isDefault,
     }
     if (editingProviderId.value) {
       await rssApi.updateLLMProvider(editingProviderId.value, payload)
@@ -327,6 +428,124 @@ async function saveProvider() {
     ElMessage.error(getErrorMessage(e))
   } finally {
     savingProvider.value = false
+  }
+}
+
+
+function applyTranslationTemplate() {
+  if (translationTemplate.value === 'Tencent Hy-MT2') {
+    Object.assign(translationProviderForm, {
+      name: 'Tencent Hy-MT2',
+      provider_type: 'openai_compatible',
+      baseUrl: 'https://tokenhub.tencentmaas.com/v1',
+      apiKey: '',
+      model: 'hy-mt2-pro',
+      enabled: true,
+      isDefault: true
+    })
+  } else if (translationTemplate.value === 'vLLM Qwen3-8B') {
+    Object.assign(translationProviderForm, {
+      name: 'Translation vLLM Qwen3-8B',
+      provider_type: 'vllm',
+      baseUrl: 'http://127.0.0.1:8001/v1',
+      apiKey: '',
+      model: 'Qwen/Qwen3-8B',
+      enabled: true,
+      isDefault: true
+    })
+  } else if (translationTemplate.value === 'Ollama') {
+    Object.assign(translationProviderForm, {
+      name: 'Translation Ollama',
+      provider_type: 'ollama',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      apiKey: 'ollama',
+      model: 'qwen3:8b',
+      enabled: true,
+      isDefault: true
+    })
+  } else {
+    Object.assign(translationProviderForm, {
+      name: 'Translation OpenAI Compatible',
+      provider_type: 'openai_compatible',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: 'gpt-4o-mini',
+      enabled: true,
+      isDefault: true
+    })
+  }
+  editingTranslationProviderId.value = null
+  editingTranslationProviderHasApiKey.value = false
+}
+
+function resetTranslationProviderForm() {
+  applyTranslationTemplate()
+}
+
+function editTranslationProvider(row: TranslationProvider) {
+  editingTranslationProviderId.value = row.id
+  editingTranslationProviderHasApiKey.value = row.has_api_key
+  Object.assign(translationProviderForm, {
+    name: row.name,
+    provider_type: row.provider_type,
+    baseUrl: row.base_url,
+    apiKey: '',
+    model: row.model,
+    enabled: row.enabled,
+    isDefault: row.is_default
+  })
+}
+
+async function setDefaultTranslationProvider(row: TranslationProvider) {
+  savingTranslationProvider.value = true
+  try {
+    await rssApi.updateTranslationProvider(row.id, { is_default: true, enabled: true })
+    await loadTranslationProviders()
+    ElMessage.success(`翻译模型已选用 ${row.name}`)
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e))
+  } finally {
+    savingTranslationProvider.value = false
+  }
+}
+
+async function removeTranslationProvider(id: number) {
+  try {
+    await rssApi.deleteTranslationProvider(id)
+    await loadTranslationProviders()
+    if (editingTranslationProviderId.value === id) resetTranslationProviderForm()
+    ElMessage.success('翻译 Provider 已删除')
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e))
+  }
+}
+
+async function saveTranslationProvider() {
+  savingTranslationProvider.value = true
+  try {
+    const payload = {
+      name: translationProviderForm.name,
+      provider_type: translationProviderForm.provider_type,
+      base_url: translationProviderForm.baseUrl,
+      api_key: translationProviderForm.apiKey,
+      model: translationProviderForm.model,
+      enabled: translationProviderForm.enabled,
+      is_default: translationProviderForm.isDefault
+    }
+    if (editingTranslationProviderId.value) {
+      await rssApi.updateTranslationProvider(editingTranslationProviderId.value, payload)
+      ElMessage.success('翻译 Provider 已更新')
+      editingTranslationProviderHasApiKey.value = Boolean(translationProviderForm.apiKey || editingTranslationProviderHasApiKey.value)
+    } else {
+      await rssApi.createTranslationProvider(payload)
+      ElMessage.success('翻译 Provider 已新增')
+    }
+    await loadTranslationProviders()
+    translationProviderForm.apiKey = ''
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e))
+  } finally {
+    savingTranslationProvider.value = false
   }
 }
 
@@ -388,6 +607,10 @@ async function saveRag() {
   flex: 0 0 auto;
 }
 
+.translation-provider-bar {
+  margin-top: 10px;
+}
+
 .section-title {
   font-size: 15px;
   font-weight: 600;
@@ -395,7 +618,8 @@ async function saveRag() {
   color: var(--el-text-color-primary);
 }
 
-.rag-panel {
+.rag-panel,
+.translation-panel {
   margin-top: 24px;
 }
 

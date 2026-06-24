@@ -86,6 +86,19 @@ CREATE TABLE IF NOT EXISTS ai_results (
     FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS ai_usage_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_result_id INTEGER,
+    entry_id INTEGER,
+    task_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'success',
+    provider TEXT,
+    model TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS llm_providers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -95,6 +108,7 @@ CREATE TABLE IF NOT EXISTS llm_providers (
     model TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
     is_default INTEGER NOT NULL DEFAULT 0,
+    is_translation_default INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -108,6 +122,23 @@ CREATE INDEX IF NOT EXISTS idx_article_tags_tag_id ON article_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_logs_feed_id ON feed_fetch_logs(feed_id);
 CREATE INDEX IF NOT EXISTS idx_ai_results_task_type ON ai_results(task_type);
 CREATE INDEX IF NOT EXISTS idx_ai_results_provider_model ON ai_results(provider, model);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_task_type ON ai_usage_logs(task_type);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_provider_model ON ai_usage_logs(provider, model);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_created_at ON ai_usage_logs(created_at);
+
+
+CREATE TABLE IF NOT EXISTS translation_providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL DEFAULT 'openai_compatible',
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS app_config (
     key TEXT PRIMARY KEY,

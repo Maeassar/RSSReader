@@ -90,6 +90,98 @@ class LLMProviderRepositoryTest(unittest.TestCase):
         self.assertEqual(stats["by_feature"][0]["name"], "summary")
         self.assertEqual(stats["by_provider"][0]["provider"], "Local Ollama")
 
+
+    def test_translation_provider_is_stored_separately(self):
+        from app.schemas import LLMProviderCreate, TranslationProviderCreate, TranslationProviderUpdate
+
+        llm_provider = self.repository.create_llm_provider(
+            LLMProviderCreate(
+                name="Summary Provider",
+                provider_type="openai_compatible",
+                base_url="http://127.0.0.1:8001/v1",
+                model="summary-model",
+                enabled=True,
+                is_default=True,
+            )
+        )
+        translation_provider = self.repository.create_translation_provider(
+            TranslationProviderCreate(
+                name="Tencent Hy-MT2",
+                provider_type="openai_compatible",
+                base_url="https://tokenhub.tencentmaas.com/v1/",
+                api_key="hy-key",
+                model="hy-mt2-pro",
+                enabled=True,
+                is_default=True,
+            )
+        )
+
+        self.assertEqual(self.repository.get_default_llm_provider()["id"], llm_provider["id"])
+        self.assertEqual(translation_provider["base_url"], "https://tokenhub.tencentmaas.com/v1")
+        self.assertTrue(translation_provider["has_api_key"])
+
+        default_translation = self.repository.get_translation_llm_provider()
+        self.assertEqual(default_translation["name"], "Tencent Hy-MT2")
+        self.assertEqual(default_translation["model"], "hy-mt2-pro")
+        self.assertEqual(default_translation["api_key"], "hy-key")
+
+        updated = self.repository.update_translation_provider(
+            translation_provider["id"],
+            TranslationProviderUpdate(name="Hy-MT2 Pro", is_default=True),
+        )
+        self.assertEqual(updated["name"], "Hy-MT2 Pro")
+        self.assertNotIn("api_key", updated)
+
+    def test_translation_provider_migrates_from_llm_translation_default(self):
+        from app.schemas import LLMProviderCreate
+        import app.database as database
+
+        self.repository.create_llm_provider(
+            LLMProviderCreate(
+                name="Old Translation Provider",
+                provider_type="ollama",
+                base_url="http://127.0.0.1:11434/v1",
+                api_key="ollama",
+                model="qwen3:8b",
+                enabled=True,
+                is_default=True,
+                is_translation_default=True,
+            )
+        )
+        with database.get_connection() as conn:
+            conn.execute("DELETE FROM translation_providers")
+            database._migrate_ai_tables(conn)
+
+        migrated = self.repository.get_translation_llm_provider()
+        self.assertEqual(migrated["name"], "Old Translation Provider")
+        self.assertEqual(migrated["model"], "qwen3:8b")
+
+    def test_usage_stats_survive_feed_deletion(self):
+        self.repository.create_ai_result(
+            1,
+            "translation",
+            "prompt",
+            "result",
+            provider="Translation Provider",
+            model="translation-model",
+            input_tokens=30,
+            output_tokens=20,
+        )
+
+        before = self.repository.stats()
+        self.assertEqual(before["total_calls"], 1)
+        self.assertEqual(before["input_tokens"], 30)
+        self.assertEqual(before["output_tokens"], 20)
+
+        self.repository.delete_feed(1)
+
+        after = self.repository.stats()
+        self.assertEqual(after["total_articles"], 0)
+        self.assertEqual(after["total_calls"], 1)
+        self.assertEqual(after["input_tokens"], 30)
+        self.assertEqual(after["output_tokens"], 20)
+        self.assertEqual(after["by_feature"][0]["name"], "translation")
+
     def test_sync_logs_can_be_filtered_by_range(self):
         today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")

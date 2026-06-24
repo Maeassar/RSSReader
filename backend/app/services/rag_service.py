@@ -17,11 +17,14 @@ from __future__ import annotations
 import os
 import sqlite3
 import struct
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import sqlite_vec
 from openai import OpenAI
 
-from app.database import DB_PATH, get_connection
+from app import database
+from app.database import get_connection
 from app.repositories import repository
 from app.services.secret_store import decrypt_secret
 
@@ -84,14 +87,28 @@ def get_chat_provider_config() -> dict:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _vec_conn() -> sqlite3.Connection:
-    """Return a connection with sqlite-vec loaded."""
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+@contextmanager
+def _vec_conn() -> Iterator[sqlite3.Connection]:
+    """Yield a connection with sqlite-vec loaded and always close it."""
+    database.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(database.DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.enable_load_extension(True)
-    sqlite_vec.load(conn)
-    conn.enable_load_extension(False)
-    return conn
+    try:
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try:
+            conn.enable_load_extension(False)
+        except Exception:
+            pass
+        conn.close()
 
 
 def _serialize(vec: list[float]) -> bytes:

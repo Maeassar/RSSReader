@@ -12,3 +12,4 @@ backports.tarfile==1.2.0
 sqlite-vec==0.1.9
 zhipuai==2.1.5.20250825
 openai==2.41.0
+socksio==1.0.0

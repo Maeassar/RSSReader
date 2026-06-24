@@ -30,6 +30,12 @@ from app.schemas.rss import (
     TagSuggestionCandidate,
     TagSuggestionResponse,
     TagUpdate,
+    TranslationProviderCreate,
+    TranslationProviderRead,
+    TranslationProviderUpdate,
+    TranslationRequest,
+    SegmentTranslationRequest,
+    SegmentTranslationResponse,
 )
 
 __all__ = [
@@ -64,4 +70,10 @@ __all__ = [
     "TagSuggestionCandidate",
     "TagSuggestionResponse",
     "TagUpdate",
+    "TranslationProviderCreate",
+    "TranslationProviderRead",
+    "TranslationProviderUpdate",
+    "TranslationRequest",
+    "SegmentTranslationRequest",
+    "SegmentTranslationResponse",
 ]

@@ -178,6 +178,7 @@ class LLMProviderCreate(BaseModel):
     model: str
     enabled: bool = True
     is_default: bool = False
+    is_translation_default: bool = False
 
 
 class LLMProviderUpdate(BaseModel):
@@ -188,9 +189,42 @@ class LLMProviderUpdate(BaseModel):
     model: str | None = None
     enabled: bool | None = None
     is_default: bool | None = None
+    is_translation_default: bool | None = None
 
 
 class LLMProviderRead(BaseModel):
+    id: int
+    name: str
+    provider_type: LLMProviderType = "openai_compatible"
+    base_url: str
+    model: str
+    enabled: bool
+    is_default: bool = False
+    is_translation_default: bool = False
+    has_api_key: bool = False
+
+
+class TranslationProviderCreate(BaseModel):
+    name: str
+    provider_type: LLMProviderType = "openai_compatible"
+    base_url: str
+    api_key: str = ""
+    model: str
+    enabled: bool = True
+    is_default: bool = False
+
+
+class TranslationProviderUpdate(BaseModel):
+    name: str | None = None
+    provider_type: LLMProviderType | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    enabled: bool | None = None
+    is_default: bool | None = None
+
+
+class TranslationProviderRead(BaseModel):
     id: int
     name: str
     provider_type: LLMProviderType = "openai_compatible"
@@ -209,6 +243,28 @@ class SummaryRequest(BaseModel):
     max_words: int = Field(default=450, ge=120, le=1200)
 
 
+class TranslationRequest(BaseModel):
+    provider_id: int | None = None
+    refresh: bool = True
+    target_language: str = Field(default="zh", pattern=r"^(zh|en|ja|ko|fr|de|es|pt|ru|ar)$")
+    source_language: str = "auto"
+    preserve_markdown: bool = True
+
+
+class SegmentTranslationRequest(BaseModel):
+    text: str
+    provider_id: int | None = None
+    target_language: str = Field(default="zh", pattern=r"^(zh|en|ja|ko|fr|de|es|pt|ru|ar)$")
+    source_language: str = "auto"
+    preserve_markdown: bool = True
+
+
+class SegmentTranslationResponse(BaseModel):
+    text: str
+    input_tokens: int
+    output_tokens: int
+
+
 class AIResultRead(BaseModel):
     id: int
     article_id: int
@@ -219,6 +275,7 @@ class AIResultRead(BaseModel):
     input_tokens: int
     output_tokens: int
     created_at: datetime
+    aligned_blocks: list[dict] | None = None
 
 
 class TagSuggestionCandidate(BaseModel):

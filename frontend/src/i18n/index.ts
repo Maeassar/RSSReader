@@ -1,11 +1,13 @@
 import { createI18n } from 'vue-i18n'
+import zh from './locales/zh'
+import en from './locales/en'
 
 export const i18n = createI18n({
   legacy: false,
-  locale: 'zh',
+  locale: localStorage.getItem('ui-language') || 'zh',
+  fallbackLocale: 'en',
   messages: {
-    zh: { app: { name: 'Ripple' } },
-    en: { app: { name: 'Ripple' } }
-  }
+    zh,
+    en,
+  },
 })
-

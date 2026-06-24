@@ -396,7 +396,7 @@ class SQLiteRepository:
                 """
                 SELECT *
                 FROM llm_providers
-                ORDER BY is_default DESC, enabled DESC, id ASC
+                ORDER BY is_default DESC, is_translation_default DESC, enabled DESC, id ASC
                 """
             ).fetchall()
         return [self._llm_provider(row, include_api_key=False) for row in rows]
@@ -423,15 +423,48 @@ class SQLiteRepository:
             raise ValueError("No enabled LLM provider configured")
         return self._llm_provider(row, include_api_key=True)
 
-    def create_llm_provider(self, payload):
+    def list_translation_providers(self):
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM translation_providers
+                ORDER BY is_default DESC, enabled DESC, id ASC
+                """
+            ).fetchall()
+        return [self._translation_provider(row, include_api_key=False) for row in rows]
+
+    def get_translation_provider(self, provider_id: int):
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM translation_providers WHERE id = ?", (provider_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"Translation provider {provider_id} not found")
+        return self._translation_provider(row, include_api_key=True)
+
+    def get_translation_llm_provider(self):
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT *
+                FROM translation_providers
+                WHERE enabled = 1
+                ORDER BY is_default DESC, id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            raise ValueError("未配置可用的翻译 Provider，请先在 AI 设置中新增并启用翻译模型。")
+        return self._translation_provider(row, include_api_key=True)
+
+    def create_translation_provider(self, payload):
         data = payload.model_dump()
         timestamp = now()
         with get_connection() as conn:
             if data.get("is_default"):
-                conn.execute("UPDATE llm_providers SET is_default = 0")
+                conn.execute("UPDATE translation_providers SET is_default = 0")
             cursor = conn.execute(
                 """
-                INSERT INTO llm_providers (
+                INSERT INTO translation_providers (
                     name, provider_type, base_url, api_key, model,
                     enabled, is_default, created_at, updated_at
                 )
@@ -445,6 +478,90 @@ class SQLiteRepository:
                     data["model"],
                     1 if data.get("enabled", True) else 0,
                     1 if data.get("is_default") else 0,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            provider_id = cursor.lastrowid
+            row = conn.execute("SELECT * FROM translation_providers WHERE id = ?", (provider_id,)).fetchone()
+        return self._translation_provider(row, include_api_key=False)
+
+    def update_translation_provider(self, provider_id: int, payload):
+        self.get_translation_provider(provider_id)
+        data = payload.model_dump(exclude_unset=True)
+        if not data:
+            provider = self.get_translation_provider(provider_id)
+            provider.pop("api_key", None)
+            return provider
+
+        assignments = []
+        values = []
+        for key, value in data.items():
+            if value is None:
+                continue
+            if key == "api_key":
+                if value == "":
+                    continue
+                assignments.append("api_key = ?")
+                values.append(encrypt_secret(value))
+            elif key == "base_url":
+                assignments.append("base_url = ?")
+                values.append(value.rstrip("/"))
+            elif key in {"enabled", "is_default"}:
+                assignments.append(f"{key} = ?")
+                values.append(1 if value else 0)
+            else:
+                assignments.append(f"{key} = ?")
+                values.append(value)
+
+        if not assignments:
+            provider = self.get_translation_provider(provider_id)
+            provider.pop("api_key", None)
+            return provider
+
+        timestamp = now()
+        values.extend([timestamp, provider_id])
+        with get_connection() as conn:
+            if data.get("is_default") is True:
+                conn.execute("UPDATE translation_providers SET is_default = 0 WHERE id != ?", (provider_id,))
+            conn.execute(
+                f"UPDATE translation_providers SET {', '.join(assignments)}, updated_at = ? WHERE id = ?",
+                values,
+            )
+        provider = self.get_translation_provider(provider_id)
+        provider.pop("api_key", None)
+        return provider
+
+    def delete_translation_provider(self, provider_id: int):
+        self.get_translation_provider(provider_id)
+        with get_connection() as conn:
+            conn.execute("DELETE FROM translation_providers WHERE id = ?", (provider_id,))
+
+    def create_llm_provider(self, payload):
+        data = payload.model_dump()
+        timestamp = now()
+        with get_connection() as conn:
+            if data.get("is_default"):
+                conn.execute("UPDATE llm_providers SET is_default = 0")
+            if data.get("is_translation_default"):
+                conn.execute("UPDATE llm_providers SET is_translation_default = 0")
+            cursor = conn.execute(
+                """
+                INSERT INTO llm_providers (
+                    name, provider_type, base_url, api_key, model,
+                    enabled, is_default, is_translation_default, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    data["name"],
+                    data.get("provider_type") or "openai_compatible",
+                    data["base_url"].rstrip("/"),
+                    encrypt_secret(data.get("api_key") or ""),
+                    data["model"],
+                    1 if data.get("enabled", True) else 0,
+                    1 if data.get("is_default") else 0,
+                    1 if data.get("is_translation_default") else 0,
                     timestamp,
                     timestamp,
                 ),
@@ -487,6 +604,8 @@ class SQLiteRepository:
         with get_connection() as conn:
             if data.get("is_default") is True:
                 conn.execute("UPDATE llm_providers SET is_default = 0 WHERE id != ?", (provider_id,))
+            if data.get("is_translation_default") is True:
+                conn.execute("UPDATE llm_providers SET is_translation_default = 0 WHERE id != ?", (provider_id,))
             conn.execute(
                 f"UPDATE llm_providers SET {', '.join(assignments)}, updated_at = ? WHERE id = ?",
                 values,
@@ -534,7 +653,28 @@ class SQLiteRepository:
                     max(0, int(output_tokens or 0)),
                 ),
             )
-            row = conn.execute("SELECT * FROM ai_results WHERE id = ?", (cursor.lastrowid,)).fetchone()
+            result_id = cursor.lastrowid
+            row = conn.execute("SELECT * FROM ai_results WHERE id = ?", (result_id,)).fetchone()
+            conn.execute(
+                """
+                INSERT INTO ai_usage_logs (
+                    source_result_id, entry_id, task_type, status, provider, model,
+                    input_tokens, output_tokens, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    result_id,
+                    article_id,
+                    result_type,
+                    status,
+                    provider,
+                    model,
+                    max(0, int(input_tokens or 0)),
+                    max(0, int(output_tokens or 0)),
+                    row["created_at"],
+                ),
+            )
         return self._ai_result(row)
 
     def get_latest_ai_result(self, article_id, result_type):
@@ -601,7 +741,7 @@ class SQLiteRepository:
                     COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_calls,
                     COALESCE(SUM(input_tokens), 0) AS input_tokens,
                     COALESCE(SUM(output_tokens), 0) AS output_tokens
-                FROM ai_results {where}
+                FROM ai_usage_logs {where}
                 """,
                 params,
             ).fetchone()
@@ -611,7 +751,7 @@ class SQLiteRepository:
                     task_type AS name,
                     COUNT(*) AS calls,
                     COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens
-                FROM ai_results {where}
+                FROM ai_usage_logs {where}
                 GROUP BY task_type
                 ORDER BY calls DESC, name ASC
                 """,
@@ -625,7 +765,7 @@ class SQLiteRepository:
                     COUNT(*) AS calls,
                     COALESCE(SUM(input_tokens), 0) AS input_tokens,
                     COALESCE(SUM(output_tokens), 0) AS output_tokens
-                FROM ai_results {where}
+                FROM ai_usage_logs {where}
                 GROUP BY provider, model
                 ORDER BY calls DESC, provider ASC, model ASC
                 """,
@@ -667,7 +807,7 @@ class SQLiteRepository:
                 COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_calls,
                 COALESCE(SUM(input_tokens), 0) AS input_tokens,
                 COALESCE(SUM(output_tokens), 0) AS output_tokens
-            FROM ai_results
+            FROM ai_usage_logs
             {where}
             GROUP BY bucket_key
             ORDER BY bucket_key ASC
@@ -1048,6 +1188,22 @@ class SQLiteRepository:
             "model": row["model"],
             "enabled": bool(row["enabled"]),
             "is_default": bool(row["is_default"]),
+            "is_translation_default": bool(row["is_translation_default"]),
+            "has_api_key": bool(row["api_key"]),
+        }
+        if include_api_key:
+            provider["api_key"] = decrypt_secret(row["api_key"] or "")
+        return provider
+
+    def _translation_provider(self, row, include_api_key: bool = False):
+        provider = {
+            "id": row["id"],
+            "name": row["name"],
+            "provider_type": row["provider_type"],
+            "base_url": row["base_url"],
+            "model": row["model"],
+            "enabled": bool(row["enabled"]),
+            "is_default": bool(row["is_default"]),
             "has_api_key": bool(row["api_key"]),
         }
         if include_api_key:
@@ -1065,6 +1221,7 @@ class SQLiteRepository:
             "input_tokens": row["input_tokens"],
             "output_tokens": row["output_tokens"],
             "created_at": row["created_at"],
+            "status": row["status"],
         }
 
 

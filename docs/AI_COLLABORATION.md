@@ -525,12 +525,104 @@
 - Kept RAG Embedding settings independent, and removed the separate RAG Chat API Key/Base URL/model fields from the AI settings page.
 - Added local API Key encryption for `llm_providers.api_key` and `rag_siliconflow_api_key`; frontend copy now states that keys are encrypted and leaves existing keys unchanged when edit fields are empty.
 - Updated `update_docs/Week17_GentleCold.md` with the implementation notes, conflict reason, validation plan, and API Key handling details.
+## 2026-06-14（Week17 AI Translation 开发准备）
 
-## 2026-06-24（Week17 token 统计删除 feed 后清零修复）
+- 使用 AI Coding Agent 根据张宥后续 Week17 开发需求，切换到 `develop` 分支并梳理当前项目进度。
+- 确认 `develop` 是当前实际开发集成分支，已有完整 Vue 3 + Vite 前端、FastAPI 后端、SQLite 数据库、Electron 桌面端、AI Summary、RAG、导出、统计等模块。
+- 重点阅读 Week16 Summary Agent、LLM Provider、AI 设置页、阅读页摘要抽屉、i18n 占位入口和 AI 用量统计实现，确认 Week17 Translation Agent 可以复用现有 provider 表、OpenAI-compatible 调用链路、`ai_results` 结果表和统计接口。
+- 发现当前 `POST /api/ai/translate/{article_id}`、`ai_service.translate()`、`rssApi.translate()` 已存在，但后端仍是 mock translation，后续需要替换为真实 provider-backed Translation Agent。
+- 将张宥 Week17 开发注意事项补充到 `AGENTS.md`，包括分支基线、翻译结果保存、统计接入、测试和文档更新要求。
+- 当前限制：本次只做项目阅读、分支确认和协作记忆更新，尚未实现真实翻译接口或 i18n 页面改造。
 
-- 使用 AI Coding Agent 排查并修复删除 feed 后 token 统计归零、无法恢复的问题。
-- 根本原因：`ai_results` 表外键 `FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE`，删除 feed 时文章被级联删除，token 记录随之清除。
-- 修复方案：将外键行为改为 `ON DELETE SET NULL`，同时将 `entry_id` 字段改为可 NULL，使 token 记录在文章删除后仍然保留，仅解除关联。
-- 修改 `schema.sql` 适配新建数据库；在 `database.py` 的 `_migrate_ai_tables()` 中新增迁移逻辑——检测现有表外键是否为 CASCADE，若是则通过"重建表 + 数据迁移 + 表替换"完成迁移（SQLite 不支持直接 ALTER 外键约束）。
-- 迁移过程：创建 `ai_results_new` → 复制全量数据 → DROP 旧表 → RENAME 新表 → 重建索引，全程在事务内完成，确保数据安全。
-- 验证：运行迁移脚本确认新表结构为 `ON DELETE SET NULL`，存量数据完整保留。
+## 2026-06-17（Week17 Translation Agent 本地实现）
+
+- 使用 AI Coding Agent 按张宥 Week17 任务在本地实现 Translation Agent，不提交 GitHub。
+- 新增 `backend/app/services/translation_agent.py`，复用 Week16 的 LLM Provider 体系和 OpenAI-compatible Chat Completions 调用链路，支持 OpenAI-compatible、vLLM、Ollama。
+- 翻译输入优先使用 `cleaned_markdown`，回退到清洗 HTML 或 RSS summary；默认保留 Markdown 结构，长文按 token 预算分段翻译并累计用量。
+- 将后端 `POST /api/ai/translate/{article_id}` 从 mock translation 替换为真实 provider-backed Translation Agent，支持 `provider_id`、`refresh`、`target_language`、`source_language`、`preserve_markdown` 请求参数。
+- 翻译成功写入 `ai_results(task_type='translation')`，记录 provider、model、input/output tokens；翻译失败写入 `status='failed'` 记录后返回可读错误，因此统计页可自然聚合 translation 用量和失败次数。
+- 前端阅读页顶部翻译按钮接入真实接口，复用底部 AI 抽屉展示译文、token 用量和复制译文按钮；目标语言复用摘要抽屉中的语言下拉框。
+- 更新 `docs/API_DESIGN.md` 和 `update_docs/Week17_sdfhjisd.md`，记录翻译接口请求/响应、数据表、测试命令和当前限制。
+- 当前限制：翻译暂未实现 SSE 事件流；完整 UI i18n 文本替换尚未展开，本次优先完成文章内容翻译 Agent。
+
+## 2026-06-22（Week17 Translation Agent 增强）
+
+- 使用 AI Coding Agent 完成 Week17 Translation Agent 的第二轮增强，实现逐句对齐翻译、SSE 事件流、译文对照视图和 UI i18n。
+- 重构 `translation_agent.py`：新增 `parse_blocks`（识别 heading/list/blockquote/code_block 等，剥离前缀保留缩进符号）、`split_sentences`（句末标点切分，缩写/小数不切）、`_build_aligned_prompt`（`|行号|` 锚点逐句对齐）、`_parse_aligned_response`（行数校验）、`_reassemble_translation`（prefix 回填）和 `_translate_aligned`（主流程），替换原有的段落级翻译为 Block-Sentence-Aligned 翻译引擎。
+- 新增 `POST /api/ai/translate/{article_id}/stream` SSE 端点，照搬 `summarize_stream` 的 queue+thread 架构，事件序列 align_check（对齐校验）和 parse（结构解析）为翻译专属。
+- 后端 `ai_service.py` 透传 `on_event`，返回 `aligned_blocks` 结构化数据供前端对照视图。
+- 前端阅读页正文区新增「原文/译文/对照」三态切换：译文视图将 AI 译文渲染到正文区，对照视图左右分栏展示逐块比对。
+- 引入 `vue-i18n` 正式接入：新增 `locales/{zh,en}.ts` 覆盖阅读页 AI 文案，界面语言与 AI 输出语言解耦，通过 `localStorage` 持久化。
+- 新增 `TranslationRequest.target_language` 正则校验（白名单 10 种语言），缓存按目标语言过滤。
+- 共 32 个单元测试（27 个旧测试扩展 + 5 个 SSE 事件流测试），前端 `vue-tsc --noEmit && vite build` 通过。
+- 当前限制：`aligned_blocks` 未持久化到数据库（刷新后需重新翻译）；SSE 翻译未实现 cancel；全站 i18n 未完成；`summaryEventTitle` 仍为硬编码中文（作为 fallback）。
+
+## 2026-06-22（Week17 代码审查与缺陷修复）
+
+- 对 deepseek 实现的 Translation Agent 代码做深度审查，发现并修复 7 类真实缺陷，新增 7 个回归测试，后端测试总数 39 个全部通过，前端 `vue-tsc + vite build` 通过。
+- **Fix 1（崩溃 bug）**：`_translate_aligned` 在文章只含 code_block/HR/空白时，`aligned_chunks` 为空却直接访问 `aligned_chunks[0]`，抛 `IndexError` 被包装成「LLM Provider 调用失败」，用户无法理解。改为检测空 chunks 时原样返回原文并发 `single_done` 事件，usage 置 0。
+- **Fix 2（空译文）**：`_parse_aligned_response` 原 70% 阈值会返回含空字符串的列表，导致重组译文出现空行。改为只接受所有行都非空的对齐结果，否则返回 None 触发回退。
+- **Fix 3（作用域风险）**：多 chunk 分支里 `fallback_completion` 仅在 `is_aligned=False` 分支定义，但 `chunk_done` 事件无条件引用它；若 `_complete_chat` 抛异常会 NameError。重构为 `chunk_usage` 变量统一承载用量。
+- **Fix 4（句子切分边界）**：原逻辑对句末 `.` 在文本末尾（无空格）时不触发边界，导致整句漏切；且小数点 `3.14` 末尾句号会被误判。新增 `_is_decimal_period` 数字两侧判定，重写 `_split_sentences_text` 边界规则。
+- **Fix 5（缓存语言提取）**：`_extract_target_language` 提取的是显示名（如 "English"），与请求的代码 `en` 比较 `English == en` 永不相等，**语言过滤从未生效**。新增 `_LANGUAGE_DISPLAY_TO_CODE` 反向映射转回代码；同时排除 `status=failed` 的缓存记录（失败记录 `result` 存错误消息，否则会被当译文返回）。
+- **Fix 6（死代码）**：移除未使用的 `import json`、`field`、`_SENTENCE_BOUNDARY` 正则、`min_sentences_for_aligned` 字段、`_build_aligned_blocks_data` 函数末尾空循环、`_emit` 内重复 `import time`。
+- **Fix 7（前端）**：`renderComparisonHtml` 的 `i` 参数未使用已移除；`runSummary` 未重置 `readerViewMode`/`alignedBlocks`，导致翻译后切摘要时正文区仍显示翻译对照视图，已修复；对照视图 CSS 新增 `@media (max-width: 720px)` 窄屏上下堆叠，`overflow-wrap: break-word` 防溢出。
+- 当前剩余限制与优化方案见 `update_docs/Week17_sdfhjisd.md` 审查记录小节。
+
+## 2026-06-22（Week17 限制 1/2 优化实现）
+
+- 针对审查报告中的两项高价值限制做实现优化，后端测试增至 46 个全部通过，前端构建通过。
+- **限制 1（aligned_blocks 持久化）**：采用方案 A，在 `ai_results.prompt` 字段前缀嵌入 `aligned_blocks` JSON（`---aligned_blocks---\n{json}\n---aligned_blocks-end---\n<trace>`）。新增 `_encode_prompt_with_aligned`/`extract_aligned_blocks_from_prompt`/`_strip_aligned_blocks_marker`；`ai_service.translate()` 保存时编码、缓存命中时解析还原并附到响应，对照视图刷新后仍可用。不改表结构，兼容 stats 聚合。4 个回归用例覆盖 roundtrip/None/空/损坏 JSON。
+- **限制 2（SSE cancel）**：新增 `CancelEvent`（`threading.Event` 封装）与 `TranslationCancelled` 异常；`translate_with_provider` 在每次 LLM 调用前 `_check_cancel`；路由 `translate_stream` 注入 `Request`，`event_stream` 每次 yield 前用 `request.is_disconnected()` 检测断开并 `cancel_event.set()`，worker 捕获 `TranslationCancelled` 发 `cancelled` 事件（非 error）。前端 `streamSse` 接受 `AbortSignal`，`runTranslate` 创建 `AbortController`，切文章/重译时 abort，`handleSummaryStreamEvent` 新增 `cancelled` 分支，catch 区分 `AbortError`（静默）与真实错误。3 个回归用例覆盖预设取消/chunk 间取消/无 cancel 正常工作。
+
+
+## 2026-06-24（Week17 PR Review 修复）
+
+- 使用 AI Coding Agent 协助处理 PR review：确认 Issue #44 内容为“清空 feed 后 token/日志统计清空，重加后 token 统计无法恢复”。
+- 新增翻译专用 Provider 标记 `llm_providers.is_translation_default`，AI 设置页新增「翻译模型」选择栏和表格操作，后端翻译默认读取翻译专用模型而不是摘要/标签/RAG 的通用默认 Provider。
+- 阅读页段落翻译移除通用摘要 Provider ID 透传，统一由后端选择翻译 Provider，降低 reviewer 环境配置不一致导致的翻译不可用风险。
+- 新增 `ai_usage_logs` 独立用量流水并迁移回填历史 `ai_results`，统计接口改读流水表，避免文章随 feed 删除后 token 统计被级联清空。
+- 剩余限制：历史上已经被删除文章对应的 `ai_results` 无法自动恢复；本次只能保证升级迁移之后的新用量统计不会随 feed 删除丢失。
+
+
+## 2026-06-24（翻译不可用问题复审与修复）
+
+- 使用 AI Coding Agent 复审同学反馈的“翻译功能不可用”问题，定位到翻译专用 Provider 缺失、旧库未设置翻译默认、前端全文翻译块与实际渲染块不一致、HTML-only 正文只翻译 summary 等高概率原因。
+- 后端翻译 Provider 选择改为优先翻译默认、缺失时回退通用默认 Provider，便于将已有测试用 Qwen/Ollama 配置直接作为翻译兜底。
+- 前端「翻译全文」改用实际渲染块，并为 HTML-only 正文增加纯文本提取，减少点翻译无效果或正文有内容但不可翻译的情况。
+- 后端新增 Provider fallback 回归测试；后端 51 个相关测试与前端构建均通过。
+
+
+## 2026-06-24（SOCKS 代理依赖修复）
+
+- 根据实际测试报错 `Using SOCKS proxy, but the 'socksio' package is not installed`，确认问题来自系统 SOCKS 代理环境与 `httpx` extras 缺失。
+- 选择安装并记录 `socksio==1.0.0`，而不是禁用代理，以兼容国外 OpenAI-compatible Provider 调用。
+- 已重启本地 FastAPI 后端并验证 `/api/health` 正常。
+
+
+## 2026-06-24（翻译 Provider 设置独立卡片）
+
+- 根据协作反馈，将 AI 设置页中的翻译 Provider 选择从 AI Provider 主卡片拆分出来，放到 RAG 配置下方作为单独卡片。
+- 新卡片展示当前实际翻译模型：优先翻译默认 Provider，未配置时展示回退的默认 AI Provider；Provider 表格仍保留快捷设为翻译默认入口。
+- 前端构建通过，保留现有 Rollup chunk warning。
+
+
+## 2026-06-24（翻译 Provider 独立存储实现）
+
+- 根据 Hy-MT2/OpenAI-compatible 翻译模型配置讨论，将翻译 Provider 从通用 AI Provider 中拆出，新增 `translation_providers` 表与独立 CRUD API。
+- 前端翻译模型卡片改为独立管理翻译 Provider，新增 Tencent Hy-MT2 快速模板，避免翻译直接复用摘要/标签/RAG 的通用 Provider。
+- 迁移会从旧 `llm_providers.is_translation_default` 或通用默认 Provider 复制初始配置，减少已有本地环境升级成本。
+- 后端和前端相关测试/构建已通过。
+
+
+## 2026-06-24（译文标签恢复原文交互）
+
+- 使用 AI Coding Agent 为阅读页段落翻译增加恢复原文交互：替换模式和对照模式中的「译文」标签均可点击，点击后清除该段翻译并展示原文。
+- 前端构建通过，保留现有 Rollup chunk warning。
+
+## 2026-06-24（Week17 PR 前代码检查）
+
+- 使用 AI Coding Agent 进行 PR 前全量检查，发现并修复两个问题：RAG sqlite-vec 连接未显式关闭导致 Windows 临时数据库清理失败；翻译服务在显式传入 `provider_id` 时仍读取通用 `llm_providers` 而不是独立 `translation_providers`。
+- 后端新增服务层回归测试，确保全文翻译与段落翻译都使用独立翻译 Provider 表。
+- 验证结果：`pytest backend/tests` 90 项通过；`npm run build --prefix frontend` 通过，仍有现有 Rollup chunk size / pure annotation 警告，不阻塞 PR。
+- PR 注意事项：不要提交本地日志、数据库、虚拟环境、构建产物；`frontend/dist/index.html` 是已跟踪构建产物改动，建议本次 PR 排除，除非团队明确要求提交 dist。

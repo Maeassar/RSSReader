@@ -505,10 +505,16 @@
                     v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.text && paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]!.mode === 'translation'"
                     class="article-block-content article-block-translated"
                   >
-                    <div class="translation-badge">
+                    <button
+                      type="button"
+                      class="translation-badge translation-badge-button"
+                      title="点击恢复原文"
+                      @click.stop="restoreParagraphOriginal(store.selectedArticle!.id, idx)"
+                    >
                       <el-icon><Switch /></el-icon>
                       <span>译文</span>
-                    </div>
+                      <span class="translation-badge-hint">恢复原文</span>
+                    </button>
                     <div v-html="renderedParagraphTranslation(paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]!.text)"></div>
                   </div>
                   <!-- 双语对照模式：原文 + 译文两行 -->
@@ -522,7 +528,15 @@
                     </div>
                     <div class="comparison-divider"></div>
                     <div class="comparison-row">
-                      <span class="comparison-label translation-label">译文</span>
+                      <button
+                        type="button"
+                        class="comparison-label translation-label translation-label-button"
+                        title="点击恢复原文"
+                        @click.stop="restoreParagraphOriginal(store.selectedArticle!.id, idx)"
+                      >
+                        译文
+                        <span class="translation-badge-hint">恢复原文</span>
+                      </button>
                       <div class="para-translation article-body" v-html="renderedParagraphTranslation(paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]!.text)"></div>
                     </div>
                   </div>
@@ -920,17 +934,6 @@ const renderedArticleHtml = computed(() => {
   return '<p>这篇文章暂时没有可展示的正文内容。</p>'
 })
 
-// 正文可翻译块：用于逐段翻译。优先解析 cleaned_markdown，回退到 summary。
-const articleContentBlocks = computed(() => {
-  const article = store.selectedArticle
-  if (!article) return [] as { text: string; translatable: boolean }[]
-  const md = article.cleaned_markdown?.trim() || ''
-  if (md) return parseTranslatableBlocks(md)
-  const summary = article.summary?.trim() || ''
-  if (summary) return [{ text: summary, translatable: true }]
-  return []
-})
-
 // 正文渲染块：分块 v-for 渲染（保留原 v-html 整体效果，同时支持逐段翻译）
 const articleRenderedBlocks = computed(() => {
   const article = store.selectedArticle
@@ -938,7 +941,8 @@ const articleRenderedBlocks = computed(() => {
   const primaryContent = article.cleaned_html?.trim() || article.raw_html?.trim() || ''
   // 原始 HTML 内容（非 markdown）：无法可靠分块，退化为单块整体渲染
   if (primaryContent && !article.cleaned_markdown?.trim()) {
-    return [{ html: primaryContent, text: article.summary?.trim() || '', translatable: !!article.summary?.trim(), isHtml: true }]
+    const text = htmlToPlainText(primaryContent) || article.summary?.trim() || ''
+    return [{ html: primaryContent, text, translatable: !!text, isHtml: true }]
   }
   const md = article.cleaned_markdown?.trim() || article.summary?.trim() || ''
   if (!md) return [{ html: '<p>这篇文章暂时没有可展示的正文内容。</p>', text: '', translatable: false, isHtml: false }]
@@ -1457,9 +1461,20 @@ function articleListSummary(article: ArticleListItem) {
 }
 
 function htmlToPlainText(value: string) {
+  if (!value.trim()) return ''
+  const withoutScripts = value.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+  const withBreaks = withoutScripts
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|blockquote|section|article)>/gi, '\n')
+  const withoutTags = withBreaks.replace(/<[^>]+>/g, ' ')
   const parser = new DOMParser()
-  const document = parser.parseFromString(value, 'text/html')
-  return (document.body.textContent || value).replace(/\s+/g, ' ').trim()
+  const document = parser.parseFromString(withoutTags, 'text/html')
+  return (document.body.textContent || withoutTags)
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function formatArticleDate(article: ArticleListItem) {
@@ -2307,7 +2322,6 @@ async function translateParagraph(articleId: number, index: number, sourceText: 
   try {
     const res = await rssApi.translateSegment({
       text: sourceText,
-      provider_id: summaryProviderId.value,
       target_language: translationLanguage.value,
       source_language: 'auto',
       preserve_markdown: true,
@@ -2334,6 +2348,13 @@ function toggleParagraphMode(articleId: number, index: number) {
     ...paragraphTranslations.value,
     [key]: { ...entry, mode: entry.mode === 'translation' ? 'comparison' : 'translation' },
   }
+}
+
+function restoreParagraphOriginal(articleId: number, index: number) {
+  const key = paragraphKey(articleId, index)
+  const next = { ...paragraphTranslations.value }
+  delete next[key]
+  paragraphTranslations.value = next
 }
 
 // 清除当前文章的所有翻译
@@ -2365,7 +2386,7 @@ function handleTranslationCommand(command: string) {
 async function runTranslate() {
   const article = store.selectedArticle
   if (!article) return
-  const blocks = articleContentBlocks.value
+  const blocks = articleRenderedBlocks.value
   if (!blocks.length) {
     ElMessage.warning('当前文章没有可翻译的正文段落')
     return
@@ -4288,6 +4309,27 @@ async function exportNote() {
   background: color-mix(in srgb, var(--theme-accent) 8%, var(--app-surface) 92%);
   border: 1px solid color-mix(in srgb, var(--theme-accent) 30%, var(--app-border) 70%);
   border-radius: 999px;
+}
+
+.translation-badge-button,
+.translation-label-button {
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.translation-badge-button:hover,
+.translation-label-button:hover {
+  color: color-mix(in srgb, var(--theme-accent) 92%, var(--app-text) 8%);
+  background: color-mix(in srgb, var(--theme-accent) 16%, var(--app-surface) 84%);
+  border-color: color-mix(in srgb, var(--theme-accent) 45%, var(--app-border) 55%);
+}
+
+.translation-badge-hint {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  opacity: 0.68;
 }
 
 .translation-badge .el-icon {

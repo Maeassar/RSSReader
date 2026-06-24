@@ -149,12 +149,110 @@ def _migrate_ai_tables(conn: sqlite3.Connection) -> None:
     provider_migrations = {
         "provider_type": "ALTER TABLE llm_providers ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'openai_compatible'",
         "is_default": "ALTER TABLE llm_providers ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0",
+        "is_translation_default": "ALTER TABLE llm_providers ADD COLUMN is_translation_default INTEGER NOT NULL DEFAULT 0",
         "created_at": "ALTER TABLE llm_providers ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
         "updated_at": "ALTER TABLE llm_providers ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
     }
     for column, statement in provider_migrations.items():
         if column not in provider_columns:
             conn.execute(statement)
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ai_usage_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_result_id INTEGER,
+            entry_id INTEGER,
+            task_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'success',
+            provider TEXT,
+            model TEXT,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_task_type ON ai_usage_logs(task_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_provider_model ON ai_usage_logs(provider, model)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_created_at ON ai_usage_logs(created_at)")
+    conn.execute(
+        """
+        INSERT INTO ai_usage_logs (
+            source_result_id, entry_id, task_type, status, provider, model,
+            input_tokens, output_tokens, created_at
+        )
+        SELECT id, entry_id, task_type, status, provider, model, input_tokens, output_tokens, created_at
+        FROM ai_results
+        WHERE id NOT IN (
+            SELECT source_result_id FROM ai_usage_logs WHERE source_result_id IS NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS translation_providers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            provider_type TEXT NOT NULL DEFAULT 'openai_compatible',
+            base_url TEXT NOT NULL,
+            api_key TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO translation_providers (
+            name, provider_type, base_url, api_key, model,
+            enabled, is_default, created_at, updated_at
+        )
+        SELECT name, provider_type, base_url, api_key, model,
+               enabled, 1, created_at, updated_at
+        FROM llm_providers
+        WHERE enabled = 1
+          AND is_translation_default = 1
+          AND NOT EXISTS (SELECT 1 FROM translation_providers)
+        ORDER BY id ASC
+        LIMIT 1
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO translation_providers (
+            name, provider_type, base_url, api_key, model,
+            enabled, is_default, created_at, updated_at
+        )
+        SELECT name, provider_type, base_url, api_key, model,
+               enabled, 1, created_at, updated_at
+        FROM llm_providers
+        WHERE enabled = 1
+          AND is_default = 1
+          AND NOT EXISTS (SELECT 1 FROM translation_providers)
+        ORDER BY id ASC
+        LIMIT 1
+        """
+    )
+
+    conn.execute(
+        """
+        UPDATE llm_providers
+        SET is_translation_default = 1
+        WHERE id = (
+            SELECT id FROM llm_providers
+            WHERE enabled = 1 AND is_default = 1
+            ORDER BY id ASC
+            LIMIT 1
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM llm_providers WHERE enabled = 1 AND is_translation_default = 1
+        )
+        """
+    )
 
 
 def _migrate_fts_table(conn: sqlite3.Connection) -> None:

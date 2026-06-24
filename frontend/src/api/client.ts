@@ -95,6 +95,7 @@ export interface AIResult {
   input_tokens: number
   output_tokens: number
   created_at: string
+  aligned_blocks?: Array<{type: string, original: string, translated: string}>
 }
 
 export interface TagSuggestionCandidate {
@@ -115,6 +116,28 @@ export interface SummaryRequestPayload {
   mode?: 'brief' | 'structured' | 'deep'
   language?: string
   max_words?: number
+}
+
+export interface TranslationRequestPayload {
+  provider_id?: number | null
+  refresh?: boolean
+  target_language?: string
+  source_language?: string
+  preserve_markdown?: boolean
+}
+
+export interface SegmentTranslationPayload {
+  text: string
+  provider_id?: number | null
+  target_language?: string
+  source_language?: string
+  preserve_markdown?: boolean
+}
+
+export interface SegmentTranslationResponse {
+  text: string
+  input_tokens: number
+  output_tokens: number
 }
 
 export interface SummaryStreamEvent {
@@ -149,10 +172,32 @@ export interface LLMProvider {
   model: string
   enabled: boolean
   is_default: boolean
+  is_translation_default: boolean
   has_api_key: boolean
 }
 
 export interface LLMProviderPayload {
+  name: string
+  provider_type: LLMProviderType
+  base_url: string
+  api_key?: string
+  model: string
+  enabled: boolean
+  is_default: boolean
+}
+
+export interface TranslationProvider {
+  id: number
+  name: string
+  provider_type: LLMProviderType
+  base_url: string
+  model: string
+  enabled: boolean
+  is_default: boolean
+  has_api_key: boolean
+}
+
+export interface TranslationProviderPayload {
   name: string
   provider_type: LLMProviderType
   base_url: string
@@ -362,15 +407,24 @@ export const rssApi = {
     payload?: SummaryRequestPayload
   ) =>
     api.post<AIResult>(`/ai/summary/${articleId}`, payload ?? {}, { timeout: 300000 }).then((res) => res.data),
-  streamSummary: (articleId: number, payload: SummaryRequestPayload | undefined, onEvent: (event: SummaryStreamEvent) => void) =>
-    streamSse<SummaryStreamEvent>(`${apiBaseUrl}/ai/summary/${articleId}/stream`, payload ?? {}, onEvent),
-  translate: (articleId: number) => api.post<AIResult>(`/ai/translate/${articleId}`).then((res) => res.data),
+  streamSummary: (articleId: number, payload: SummaryRequestPayload | undefined, onEvent: (event: SummaryStreamEvent) => void, signal?: AbortSignal) =>
+    streamSse<SummaryStreamEvent>(`${apiBaseUrl}/ai/summary/${articleId}/stream`, payload ?? {}, onEvent, signal),
+  translate: (articleId: number, payload?: TranslationRequestPayload) =>
+    api.post<AIResult>(`/ai/translate/${articleId}`, payload ?? {}, { timeout: 300000 }).then((res) => res.data),
+  streamTranslate: (articleId: number, payload: TranslationRequestPayload | undefined, onEvent: (event: SummaryStreamEvent) => void, signal?: AbortSignal) =>
+    streamSse<SummaryStreamEvent>(`${apiBaseUrl}/ai/translate/${articleId}/stream`, payload ?? {}, onEvent, signal),
+  translateSegment: (payload: SegmentTranslationPayload) =>
+    api.post<SegmentTranslationResponse>(`/ai/translate/segment`, payload, { timeout: 120000 }).then((res) => res.data),
   suggestTags: (articleId: number) =>
     api.post<TagSuggestionResponse>(`/ai/tag-suggest/${articleId}`, null, { timeout: 120000 }).then((res) => res.data),
   llmProviders: () => api.get<LLMProvider[]>('/ai/providers').then((res) => res.data),
   createLLMProvider: (payload: LLMProviderPayload) => api.post<LLMProvider>('/ai/providers', payload).then((res) => res.data),
   updateLLMProvider: (id: number, payload: Partial<LLMProviderPayload>) => api.put<LLMProvider>(`/ai/providers/${id}`, payload).then((res) => res.data),
   deleteLLMProvider: (id: number) => api.delete<OperationResult>(`/ai/providers/${id}`).then((res) => res.data),
+  translationProviders: () => api.get<TranslationProvider[]>('/ai/translation-providers').then((res) => res.data),
+  createTranslationProvider: (payload: TranslationProviderPayload) => api.post<TranslationProvider>('/ai/translation-providers', payload).then((res) => res.data),
+  updateTranslationProvider: (id: number, payload: Partial<TranslationProviderPayload>) => api.put<TranslationProvider>(`/ai/translation-providers/${id}`, payload).then((res) => res.data),
+  deleteTranslationProvider: (id: number) => api.delete<OperationResult>(`/ai/translation-providers/${id}`).then((res) => res.data),
   llmStats: (range?: StatsRange) =>
     api.get('/stats/llm', { params: range ? { range } : {} }).then((res) => res.data),
   llmTimeseries: (range: StatsRange = 'today') =>
@@ -404,11 +458,17 @@ async function streamFormDataSse<T>(url: string, formData: FormData, onEvent: (e
   await readSseResponse(response, onEvent)
 }
 
-async function streamSse<T>(url: string, payload: unknown, onEvent: (event: T) => void) {
+async function streamSse<T>(
+  url: string,
+  payload: unknown,
+  onEvent: (event: T) => void,
+  signal?: AbortSignal,
+) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal,
   })
   if (!response.ok || !response.body) {
     throw new Error(await fetchErrorMessage(response))

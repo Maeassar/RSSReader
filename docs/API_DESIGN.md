@@ -106,6 +106,66 @@ Response example:
 }
 ```
 
+### `POST /api/ai/translate/{article_id}`
+
+使用已配置的 LLM Provider 翻译文章正文。为空时使用默认启用的
+Provider，结果写入 `ai_results`，`task_type` 为 `translation`。
+
+请求体示例：
+
+```json
+{
+  "provider_id": null,
+  "refresh": true,
+  "target_language": "zh",
+  "source_language": "auto",
+  "preserve_markdown": true
+}
+```
+
+响应体示例：
+
+```json
+{
+  "id": 18,
+  "article_id": 12,
+  "type": "translation",
+  "provider_id": null,
+  "prompt": "...",
+  "result": "译文内容",
+  "input_tokens": 210,
+  "output_tokens": 64,
+  "created_at": "2026-06-17T12:00:00"
+}
+```
+
+行为说明：
+
+- `refresh=false` 时优先返回最近一次翻译缓存（且目标语言匹配时命中）
+- `target_language` 支持 `zh/en/ja/ko/fr/de/es/pt/ru/ar` 等语言代码，后端按正则校验
+- `preserve_markdown=true` 时尽量保留标题、列表、引用和链接结构，并逐句对齐
+- 失败调用会写入 `status=failed` 的 `ai_results` 记录，供统计页展示异常请求
+
+### `POST /api/ai/translate/{article_id}/stream`
+
+SSE 流式翻译端点，事件序列与 `summarize_stream` 对齐：
+
+| 事件类型 | 标题示例 | 说明 |
+|---------|---------|------|
+| `prepare` | 读取文章上下文 | 已整理标题、源正文与翻译参数 |
+| `parse` | 解析文章结构 | 识别到 N 个块、M 个句子 |
+| `budget` | 评估上下文预算 | 输入约 X tokens，预算 Y tokens |
+| `chunk_plan` | 切分翻译片段 | 长文分段时发出 |
+| `chunk_start` | 翻译片段 i/N | 每个 chunk 开始 |
+| `chunk_done` | 片段 i/N 完成 | 每个 chunk 完成，含 usage |
+| `align_check` | 对齐校验 | 译文行数与原文一致/回退 |
+| `save_start` | 保存翻译结果 | 写入 ai_results |
+| `result` | 翻译已生成 | 返回译文与用量（prompt 置空） |
+| `save_done` | 翻译结果已保存 | 累计用量 |
+| `done`/`error` | 完成/失败 | 流结束 |
+
+请求体同 `POST /api/ai/translate/{article_id}`。
+
 ## Stats and Logs
 
 - `GET /api/stats/llm`
