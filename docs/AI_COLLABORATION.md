@@ -525,3 +525,12 @@
 - Kept RAG Embedding settings independent, and removed the separate RAG Chat API Key/Base URL/model fields from the AI settings page.
 - Added local API Key encryption for `llm_providers.api_key` and `rag_siliconflow_api_key`; frontend copy now states that keys are encrypted and leaves existing keys unchanged when edit fields are empty.
 - Updated `update_docs/Week17_GentleCold.md` with the implementation notes, conflict reason, validation plan, and API Key handling details.
+
+## 2026-06-24（Week17 token 统计删除 feed 后清零修复）
+
+- 使用 AI Coding Agent 排查并修复删除 feed 后 token 统计归零、无法恢复的问题。
+- 根本原因：`ai_results` 表外键 `FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE`，删除 feed 时文章被级联删除，token 记录随之清除。
+- 修复方案：将外键行为改为 `ON DELETE SET NULL`，同时将 `entry_id` 字段改为可 NULL，使 token 记录在文章删除后仍然保留，仅解除关联。
+- 修改 `schema.sql` 适配新建数据库；在 `database.py` 的 `_migrate_ai_tables()` 中新增迁移逻辑——检测现有表外键是否为 CASCADE，若是则通过"重建表 + 数据迁移 + 表替换"完成迁移（SQLite 不支持直接 ALTER 外键约束）。
+- 迁移过程：创建 `ai_results_new` → 复制全量数据 → DROP 旧表 → RENAME 新表 → 重建索引，全程在事务内完成，确保数据安全。
+- 验证：运行迁移脚本确认新表结构为 `ON DELETE SET NULL`，存量数据完整保留。
