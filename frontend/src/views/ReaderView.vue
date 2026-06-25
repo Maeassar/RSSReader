@@ -484,7 +484,50 @@
               <div class="reader-source-row">
                 <span class="reader-source-name">{{ store.selectedArticle.feed_title }}</span>
               </div>
-              <h1 class="reader-title" v-html="renderTitleInlineHtml(store.selectedArticle.title)"></h1>
+              <!-- 原文标题：有译文且仅译文模式时隐藏 -->
+              <h1
+                v-if="!titleTranslation || titleTranslation.mode !== 'translation' || !titleTranslation.text"
+                class="reader-title"
+                v-html="renderTitleInlineHtml(store.selectedArticle.title)"
+              ></h1>
+              <!-- 标题译文（仅译文模式：只显示译文替代原文） -->
+              <h1
+                v-if="titleTranslation && titleTranslation.mode === 'translation'"
+                class="reader-title reader-title-translated"
+                v-html="renderTitleInlineHtml(titleTranslation.text)"
+              ></h1>
+              <!-- 标题译文（对照模式：原文下方显示译文） -->
+              <div v-if="titleTranslation && titleTranslation.mode === 'comparison'" class="title-translation-row">
+                <div class="title-translation-text" v-html="renderedTitleTranslation(titleTranslation.text)"></div>
+              </div>
+              <!-- 标题操作栏：hover 标题区域浮现 -->
+              <div class="title-translate-bar">
+                <div class="title-translate-actions">
+                  <template v-if="titleTranslation && titleTranslation.text">
+                    <span class="title-translate-status">
+                      <el-icon><Switch /></el-icon>
+                      <span v-if="titleTranslation.loading">翻译中…</span>
+                      <span v-else>已翻译</span>
+                    </span>
+                    <button class="para-translate-btn" :disabled="titleTranslation.loading || translatingAll" @click.stop="translateTitle()">
+                      <span>重新翻译</span>
+                    </button>
+                    <button class="para-translate-btn mode-btn" @click.stop="toggleTitleMode()">
+                      <span v-if="titleTranslation.mode === 'translation'">双语对照</span>
+                      <span v-else>仅译文</span>
+                    </button>
+                    <button class="para-translate-btn mode-btn" @click.stop="restoreTitleOriginal()">
+                      <span>恢复原文</span>
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button class="para-translate-btn" :disabled="translatingAll" @click.stop="translateTitle()">
+                      <el-icon><Switch /></el-icon>
+                      <span>翻译标题</span>
+                    </button>
+                  </template>
+                </div>
+              </div>
               <div class="reader-source-link-row">
                 <a class="reader-source-link" :href="store.selectedArticle.url" target="_blank" rel="noopener noreferrer" @click="handleExternalLinkClick">
                   {{ store.selectedArticle.url }}
@@ -552,7 +595,7 @@
                       class="para-translate-btn"
                       :class="{ loading: paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading }"
                       :disabled="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading || translatingAll"
-                      @click.stop="translateParagraph(store.selectedArticle!.id, idx, block.text)"
+                      @click.stop="translateParagraph(store.selectedArticle!.id, idx, block.text, block.isHtml)"
                     >
                       <el-icon v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading" class="is-loading"><Loading /></el-icon>
                       <el-icon v-else><Switch /></el-icon>
@@ -564,7 +607,7 @@
                         class="para-translate-btn"
                         :class="{ loading: paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading }"
                         :disabled="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading || translatingAll"
-                        @click.stop="translateParagraph(store.selectedArticle!.id, idx, block.text)"
+                        @click.stop="translateParagraph(store.selectedArticle!.id, idx, block.text, block.isHtml)"
                       >
                         <el-icon v-if="paragraphTranslations[paragraphKey(store.selectedArticle!.id, idx)]?.loading" class="is-loading"><Loading /></el-icon>
                         <el-icon v-else><Refresh /></el-icon>
@@ -831,6 +874,42 @@ const copyDone = ref(false)
 // 翻译相关状态
 const paragraphTranslations = ref<Record<string, { text: string; loading: boolean; mode: 'translation' | 'comparison' }>>({})
 const translatingAll = ref(false)
+
+// 标题翻译
+const titleTranslation = computed(() => {
+  const articleId = store.selectedArticle?.id
+  if (!articleId) return null
+  const key = `${articleId}:title`
+  return paragraphTranslations.value[key] || null
+})
+
+function translateTitle() {
+  const article = store.selectedArticle
+  if (!article) return
+  const key = `${article.id}:title`
+  translateParagraphWithKey(key, article.title)
+}
+
+function toggleTitleMode() {
+  const article = store.selectedArticle
+  if (!article) return
+  const key = `${article.id}:title`
+  const entry = paragraphTranslations.value[key]
+  if (!entry) return
+  paragraphTranslations.value = {
+    ...paragraphTranslations.value,
+    [key]: { ...entry, mode: entry.mode === 'translation' ? 'comparison' : 'translation' },
+  }
+}
+
+function restoreTitleOriginal() {
+  const article = store.selectedArticle
+  if (!article) return
+  const key = `${article.id}:title`
+  const next = { ...paragraphTranslations.value }
+  delete next[key]
+  paragraphTranslations.value = next
+}
 const translationLanguage = ref<string>(detectSystemLanguage())
 
 type SummaryCacheEntry = { result: string; usage: string }
@@ -2348,9 +2427,15 @@ function renderedParagraphTranslation(text: string): string {
   return markdownToHtml(text)
 }
 
-// 翻译正文中的单一段落
-async function translateParagraph(articleId: number, index: number, sourceText: string) {
-  const key = paragraphKey(articleId, index)
+// 渲染标题译文
+function renderedTitleTranslation(text: string): string {
+  if (!text) return ''
+  if (looksLikeHtml(text)) return text
+  return renderTitleInlineHtml(text)
+}
+
+// 翻译正文中的单一段落（通过指定 key）
+async function translateParagraphWithKey(key: string, sourceText: string, isHtml: boolean = false) {
   const prev = paragraphTranslations.value[key]
   if (prev?.loading) return
   paragraphTranslations.value = {
@@ -2362,7 +2447,8 @@ async function translateParagraph(articleId: number, index: number, sourceText: 
       text: sourceText,
       target_language: translationLanguage.value,
       source_language: 'auto',
-      preserve_html: true,
+      preserve_html: isHtml,
+      preserve_markdown: !isHtml,
     })
     paragraphTranslations.value = {
       ...paragraphTranslations.value,
@@ -2375,6 +2461,12 @@ async function translateParagraph(articleId: number, index: number, sourceText: 
     }
     ElMessage.error(getErrorMessage(error, '该段翻译失败，请检查 Provider 配置'))
   }
+}
+
+// 翻译正文中的单一段落
+async function translateParagraph(articleId: number, index: number, sourceText: string, isHtml: boolean = false) {
+  const key = paragraphKey(articleId, index)
+  translateParagraphWithKey(key, sourceText, isHtml)
 }
 
 // 切换某段译文的展示模式
@@ -2452,10 +2544,15 @@ async function runTranslate() {
   if (translatingAll.value) return
   translatingAll.value = true
   try {
+    // 先翻译标题（始终重新翻译以匹配新语言）
+    const titleKey = `${article.id}:title`
+    if (article.title) {
+      await translateParagraphWithKey(titleKey, article.title)
+    }
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i]
       if (!b.translatable || !b.text.trim()) continue
-      await translateParagraph(article.id, i, b.text)
+      await translateParagraph(article.id, i, b.text, b.isHtml)
     }
     ElMessage.success('全文翻译完成')
   } finally {
@@ -3968,6 +4065,57 @@ async function exportNote() {
 .reader-hero {
   margin-bottom: 16px;
   padding-top: 16px;
+}
+
+.reader-title-translated {
+  color: color-mix(in srgb, var(--theme-accent) 70%, var(--app-text) 30%);
+}
+
+.title-translation-row {
+  margin: 6px 0 0;
+}
+
+.title-translation-text {
+  font-size: clamp(20px, calc(var(--reader-font-size) + 6px), 28px);
+  line-height: 1.35;
+  letter-spacing: -0.04em;
+  color: color-mix(in srgb, var(--theme-accent) 75%, var(--app-text) 25%);
+  text-wrap: pretty;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 22%, var(--app-border) 78%);
+  background: color-mix(in srgb, var(--theme-accent) 6%, var(--app-surface) 94%);
+}
+
+/* 标题翻译操作栏 */
+.title-translate-bar {
+  margin: 4px 0 2px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.reader-hero:hover .title-translate-bar {
+  opacity: 1;
+}
+
+.title-translate-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.title-translate-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--theme-accent) 80%, var(--app-text) 20%);
+}
+
+.title-translate-status .el-icon {
+  font-size: 12px;
 }
 
 .summary-drawer {
