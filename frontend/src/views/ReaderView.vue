@@ -2421,8 +2421,6 @@ async function runTranslate() {
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i]
       if (!b.translatable || !b.text.trim()) continue
-      const key = paragraphKey(article.id, i)
-      if (paragraphTranslations.value[key]?.text) continue
       await translateParagraph(article.id, i, b.text)
     }
     ElMessage.success('全文翻译完成')
