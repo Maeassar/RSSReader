@@ -417,6 +417,9 @@
                   <el-dropdown-item v-for="opt in summaryLanguageOptions" :key="opt.value" :command="`lang:${opt.value}`">
                     {{ translationLanguage === opt.value ? '✓ ' : '' }}{{ opt.label }}
                   </el-dropdown-item>
+                  <el-dropdown-item divided command="toggle-all-mode" :disabled="!hasAnyTranslation">
+                    {{ allTranslatedInComparisonMode ? '全部切换为仅译文' : '全部切换为双语对照' }}
+                  </el-dropdown-item>
                   <el-dropdown-item divided command="clear-all" :disabled="!hasAnyTranslation">清除全部翻译</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -939,8 +942,9 @@ const articleRenderedBlocks = computed(() => {
   const article = store.selectedArticle
   if (!article) return [] as { html: string; text: string; translatable: boolean; isHtml: boolean }[]
   const primaryContent = article.cleaned_html?.trim() || article.raw_html?.trim() || ''
-  // 原始 HTML 内容（非 markdown）：无法可靠分块，退化为单块整体渲染
-  if (primaryContent && !article.cleaned_markdown?.trim()) {
+  const hasImages = /<img[^>]+src=/i.test(primaryContent)
+  // 原始 HTML 内容有图片或非 markdown：无法可靠分块，退化为单块整体渲染
+  if (primaryContent && (!article.cleaned_markdown?.trim() || hasImages)) {
     const text = htmlToPlainText(primaryContent) || article.summary?.trim() || ''
     return [{ html: primaryContent, text, translatable: !!text, isHtml: true }]
   }
@@ -2317,7 +2321,7 @@ async function translateParagraph(articleId: number, index: number, sourceText: 
   if (prev?.loading) return
   paragraphTranslations.value = {
     ...paragraphTranslations.value,
-    [key]: { text: prev?.text ?? '', loading: true, mode: prev?.mode ?? 'translation' },
+    [key]: { text: prev?.text ?? '', loading: true, mode: prev?.mode ?? 'comparison' },
   }
   try {
     const res = await rssApi.translateSegment({
@@ -2328,7 +2332,7 @@ async function translateParagraph(articleId: number, index: number, sourceText: 
     })
     paragraphTranslations.value = {
       ...paragraphTranslations.value,
-      [key]: { text: res.text, loading: false, mode: 'translation' },
+      [key]: { text: res.text, loading: false, mode: 'comparison' },
     }
   } catch (error) {
     paragraphTranslations.value = {
@@ -2371,6 +2375,14 @@ function clearAllTranslations() {
   ElMessage.success('已清除全部翻译')
 }
 
+const allTranslatedInComparisonMode = computed(() => {
+  if (!store.selectedArticle) return false
+  const articleId = store.selectedArticle.id
+  const keys = Object.keys(paragraphTranslations.value).filter(k => k.startsWith(`${articleId}:`))
+  if (!keys.length) return false
+  return keys.every(k => paragraphTranslations.value[k]?.mode === 'comparison')
+})
+
 // 处理翻译下拉菜单命令
 function handleTranslationCommand(command: string) {
   if (command.startsWith('lang:')) {
@@ -2379,6 +2391,18 @@ function handleTranslationCommand(command: string) {
     ElMessage.success(`目标语言已设为 ${label}`)
   } else if (command === 'clear-all') {
     clearAllTranslations()
+  } else if (command === 'toggle-all-mode') {
+    const targetMode = allTranslatedInComparisonMode.value ? 'translation' : 'comparison'
+    const articleId = store.selectedArticle?.id
+    if (!articleId) return
+    const next = { ...paragraphTranslations.value }
+    for (const key of Object.keys(next)) {
+      if (key.startsWith(`${articleId}:`) && next[key]?.text) {
+        next[key] = { ...next[key], mode: targetMode as 'translation' | 'comparison' }
+      }
+    }
+    paragraphTranslations.value = next
+    ElMessage.success(targetMode === 'comparison' ? '已全部切换为双语对照' : '已全部切换为仅译文')
   }
 }
 
