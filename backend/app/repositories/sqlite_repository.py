@@ -727,10 +727,20 @@ class SQLiteRepository:
 
         return [{"time_label": lbl, **existing.get(lbl, empty)} for lbl in labels]
 
-    def stats(self, range: str | None = None):
+    def stats(self, range: str | None = None, provider: str | None = None, model: str | None = None):
         cutoff = self._range_cutoff(range)
-        where = "WHERE created_at >= ?" if cutoff else ""
-        params = [cutoff] if cutoff else []
+        conditions = []
+        params: list = []
+        if cutoff:
+            conditions.append("created_at >= ?")
+            params.append(cutoff)
+        if provider is not None:
+            conditions.append("COALESCE(provider, 'unknown') = ?")
+            params.append(provider)
+        if model is not None:
+            conditions.append("COALESCE(model, 'unknown') = ?")
+            params.append(model)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         with get_connection() as conn:
             article_count = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
@@ -757,6 +767,10 @@ class SQLiteRepository:
                 """,
                 params,
             ).fetchall()
+            # by_provider always uses range filter only (no provider/model filter)
+            base_conditions = ["created_at >= ?"] if cutoff else []
+            base_params = [cutoff] if cutoff else []
+            base_where = ("WHERE " + " AND ".join(base_conditions)) if base_conditions else ""
             by_provider = conn.execute(
                 f"""
                 SELECT
@@ -765,11 +779,11 @@ class SQLiteRepository:
                     COUNT(*) AS calls,
                     COALESCE(SUM(input_tokens), 0) AS input_tokens,
                     COALESCE(SUM(output_tokens), 0) AS output_tokens
-                FROM ai_usage_logs {where}
+                FROM ai_usage_logs {base_where}
                 GROUP BY provider, model
                 ORDER BY calls DESC, provider ASC, model ASC
                 """,
-                params,
+                base_params,
             ).fetchall()
         return {
             "total_articles": article_count,
@@ -781,10 +795,20 @@ class SQLiteRepository:
             "by_provider": [dict(row) for row in by_provider],
         }
 
-    def stats_timeseries(self, range: str | None = None) -> list[dict]:
+    def stats_timeseries(self, range: str | None = None, provider: str | None = None, model: str | None = None) -> list[dict]:
         cutoff = self._range_cutoff(range)
-        where = "WHERE created_at >= ?" if cutoff else ""
-        params = [cutoff] if cutoff else []
+        conditions = []
+        params: list = []
+        if cutoff:
+            conditions.append("created_at >= ?")
+            params.append(cutoff)
+        if provider is not None:
+            conditions.append("COALESCE(provider, 'unknown') = ?")
+            params.append(provider)
+        if model is not None:
+            conditions.append("COALESCE(model, 'unknown') = ?")
+            params.append(model)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         # Convert stored UTC-like timestamps to local time for bucketing
         now_local = datetime.now()
@@ -815,6 +839,23 @@ class SQLiteRepository:
         with get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
         return self._fill_buckets(range, [dict(r) for r in rows])
+
+    def delete_stats(self, provider: str | None = None, model: str | None = None) -> int:
+        conditions = []
+        params: list = []
+        if provider is not None:
+            conditions.append("COALESCE(provider, 'unknown') = ?")
+            params.append(provider)
+        if model is not None:
+            conditions.append("COALESCE(model, 'unknown') = ?")
+            params.append(model)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        with get_connection() as conn:
+            conn.execute(f"DELETE FROM ai_usage_logs {where}", params)
+            deleted = conn.execute("SELECT changes()").fetchone()[0]
+            if where:
+                conn.execute(f"DELETE FROM ai_results {where}", params)
+        return deleted
 
     def list_tags(self):
         with get_connection() as conn:

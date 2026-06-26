@@ -912,7 +912,19 @@ function restoreTitleOriginal() {
 }
 const translationLanguage = ref<string>(detectSystemLanguage())
 
-type SummaryCacheEntry = { result: string; usage: string }
+type SummaryCacheEntry = { result: string; usage: string; language: string }
+
+const SUMMARY_LANGUAGE_DISPLAY_TO_CODE: Record<string, string> = {
+  '中文': 'zh', 'English': 'en', '日本語': 'ja', '한국어': 'ko',
+  'Français': 'fr', 'Deutsch': 'de', 'Español': 'es', 'Português': 'pt',
+  'Русский': 'ru', 'العربية': 'ar',
+}
+
+function extractSummaryLanguage(prompt: string): string | null {
+  const m = prompt.match(/输出语言[：:]\s*(\S+)/)
+  if (!m) return null
+  return SUMMARY_LANGUAGE_DISPLAY_TO_CODE[m[1]] ?? null
+}
 const summaryCache = new Map<number, SummaryCacheEntry>()
 
 async function copySummary() {
@@ -1220,14 +1232,17 @@ watch(
       if (cached) {
         aiResult.value = cached.result
         summaryUsage.value = cached.usage
+        summaryLanguage.value = cached.language
         summaryResultVisible.value = true
       } else {
         const remote = await rssApi.getCachedSummary(newId)
         if (remote?.result) {
           aiResult.value = remote.result
           summaryUsage.value = `${remote.input_tokens} 输入 / ${remote.output_tokens} 输出 tokens`
+          const detectedLang = extractSummaryLanguage(remote.prompt ?? '')
+          if (detectedLang) summaryLanguage.value = detectedLang
           summaryResultVisible.value = true
-          summaryCache.set(newId, { result: aiResult.value, usage: summaryUsage.value })
+          summaryCache.set(newId, { result: aiResult.value, usage: summaryUsage.value, language: summaryLanguage.value })
         }
       }
     }
@@ -2215,7 +2230,7 @@ function renderMarkdownInline(value: string, options: { allowLinks?: boolean } =
 
 function saveSummaryToCache(articleId: number) {
   if (aiResult.value) {
-    summaryCache.set(articleId, { result: aiResult.value, usage: summaryUsage.value })
+    summaryCache.set(articleId, { result: aiResult.value, usage: summaryUsage.value, language: summaryLanguage.value })
   }
 }
 

@@ -80,3 +80,26 @@ conn.close()
 
 - `entry_id` 为 NULL 的历史记录无法再关联回具体文章，但 token 总量、provider、model、时序分布等统计维度均不受影响。
 - 若数据库文件不存在（全新安装），`schema.sql` 直接建表为正确结构，无需迁移。
+
+## 本次补充修正（统计页交互）
+
+在 Week17 统计持久化修复落地后，又继续使用 AI Coding Agent 协助排查并修正统计页的两个前端交互问题：
+
+1. **模型用量统计删除失败**
+   - 现象：统计页下拉中的某个 `provider / model` 组合点击删除后，经常提示失败。
+   - 原因：前端删除逻辑依赖展示字符串拆分 provider/model，参数传递不够稳定。
+   - 修正：将统计页模型选项保留为展示值 + 原始 `provider`/`model` 字段，删除按钮直接传递结构化参数给 `/api/stats/llm` 删除接口，不再依赖展示字符串二次拆分。
+
+2. **模型下拉框弹层位置不稳定**
+   - 现象：统计页模型下拉有时会出现在控件左侧，而不是正下方。
+   - 修正：为 `el-select` 显式设置 `placement="bottom-start"`、禁用 fallback placements，并关闭 teleport，使下拉框固定优先从输入框下方展开。
+
+### 涉及文件
+
+- `frontend/src/views/StatsView.vue`
+- `backend/tests/test_llm_provider_repository.py`
+
+### 本次补充验证
+
+- 补充后端回归测试：新增按 `provider + model` 删除统计记录的测试用例。
+- 本地尝试执行 `python -m unittest` 时，当前 shell 未正确配置 `app` 模块路径，测试启动失败；该问题属于测试运行环境，不属于本次删除逻辑修复本身。

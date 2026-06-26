@@ -156,31 +156,35 @@ class LLMProviderRepositoryTest(unittest.TestCase):
         self.assertEqual(migrated["name"], "Old Translation Provider")
         self.assertEqual(migrated["model"], "qwen3:8b")
 
-    def test_usage_stats_survive_feed_deletion(self):
+    def test_delete_stats_by_provider_and_model(self):
         self.repository.create_ai_result(
             1,
-            "translation",
+            "summary",
             "prompt",
             "result",
-            provider="Translation Provider",
-            model="translation-model",
-            input_tokens=30,
-            output_tokens=20,
+            provider="OpenAI Compatible",
+            model="deepseek-v4-flash",
+            input_tokens=10,
+            output_tokens=5,
+        )
+        self.repository.create_ai_result(
+            1,
+            "summary",
+            "prompt",
+            "result",
+            provider="OpenAI Compatible",
+            model="deepseek-v4-pro",
+            input_tokens=11,
+            output_tokens=6,
         )
 
-        before = self.repository.stats()
-        self.assertEqual(before["total_calls"], 1)
-        self.assertEqual(before["input_tokens"], 30)
-        self.assertEqual(before["output_tokens"], 20)
+        deleted = self.repository.delete_stats("OpenAI Compatible", "deepseek-v4-flash")
+        self.assertEqual(deleted, 1)
 
-        self.repository.delete_feed(1)
-
-        after = self.repository.stats()
-        self.assertEqual(after["total_articles"], 0)
-        self.assertEqual(after["total_calls"], 1)
-        self.assertEqual(after["input_tokens"], 30)
-        self.assertEqual(after["output_tokens"], 20)
-        self.assertEqual(after["by_feature"][0]["name"], "translation")
+        stats = self.repository.stats()
+        self.assertEqual(stats["total_calls"], 1)
+        self.assertEqual(len(stats["by_provider"]), 1)
+        self.assertEqual(stats["by_provider"][0]["model"], "deepseek-v4-pro")
 
     def test_sync_logs_can_be_filtered_by_range(self):
         today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

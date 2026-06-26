@@ -426,10 +426,12 @@ export const rssApi = {
   createTranslationProvider: (payload: TranslationProviderPayload) => api.post<TranslationProvider>('/ai/translation-providers', payload).then((res) => res.data),
   updateTranslationProvider: (id: number, payload: Partial<TranslationProviderPayload>) => api.put<TranslationProvider>(`/ai/translation-providers/${id}`, payload).then((res) => res.data),
   deleteTranslationProvider: (id: number) => api.delete<OperationResult>(`/ai/translation-providers/${id}`).then((res) => res.data),
-  llmStats: (range?: StatsRange) =>
-    api.get('/stats/llm', { params: range ? { range } : {} }).then((res) => res.data),
-  llmTimeseries: (range: StatsRange = 'today') =>
-    api.get<LLMTimeseriesBucket[]>('/stats/llm/timeseries', { params: { range } }).then((res) => res.data),
+  llmStats: (range?: StatsRange, filter?: { provider?: string; model?: string }) =>
+    api.get('/stats/llm', { params: { ...(range ? { range } : {}), ...filter } }).then((res) => res.data),
+  llmTimeseries: (range: StatsRange = 'today', filter?: { provider?: string; model?: string }) =>
+    api.get<LLMTimeseriesBucket[]>('/stats/llm/timeseries', { params: { range, ...filter } }).then((res) => res.data),
+  deleteModelStats: (provider: string, model: string) =>
+    api.delete('/stats/llm', { params: { provider, model } }).then((res) => res.data),
   syncLogs: (range?: StatsRange) =>
     api.get<SyncLog[]>('/logs/sync', { params: range ? { range } : {} }).then((res) => res.data),
   search: (q: string, limit = 50) =>

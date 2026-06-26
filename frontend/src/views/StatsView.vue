@@ -22,9 +22,34 @@
               >{{ opt.label }}</button>
               <el-button :icon="Refresh" text @click="loadTrafficStats" />
             </div>
-            <div class="chart-mode-toggle">
-              <button :class="{ active: chartMode === 'calls' }" @click="chartMode = 'calls'">请求次数</button>
-              <button :class="{ active: chartMode === 'tokens' }" @click="chartMode = 'tokens'">TOKEN</button>
+            <div class="stats-controls-right">
+              <el-select
+                v-if="modelOptions.length > 1"
+                v-model="selectedModel"
+                size="small"
+                style="width: 160px"
+                placement="bottom-start"
+                :fallback-placements="[]"
+                :teleported="false"
+                @change="loadTrafficStats"
+              >
+                <el-option label="全部模型" value="" />
+                <el-option
+                  v-for="opt in modelOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                >
+                  <div class="model-option">
+                    <span class="model-option-label">{{ opt.label }}</span>
+                    <span class="model-option-delete" title="删除此模型的统计记录" @click.stop="confirmDeleteModel(opt)">×</span>
+                  </div>
+                </el-option>
+              </el-select>
+              <div class="chart-mode-toggle">
+                <button :class="{ active: chartMode === 'calls' }" @click="chartMode = 'calls'">请求次数</button>
+                <button :class="{ active: chartMode === 'tokens' }" @click="chartMode = 'tokens'">TOKEN</button>
+              </div>
             </div>
           </div>
 
@@ -91,6 +116,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, ArrowUp, Refresh } from '@element-plus/icons-vue'
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -105,6 +131,7 @@ const collapsed = ref(false)
 const trafficRange = ref<StatsRange>('today')
 const logRange = ref<StatsRange>('today')
 const chartMode = ref<'calls' | 'tokens'>('calls')
+const selectedModel = ref('')
 const stats = ref<Record<string, any>>({})
 const timeseries = ref<LLMTimeseriesBucket[]>([])
 const logs = ref<SyncLog[]>([])
@@ -116,11 +143,27 @@ const rangeOptions: { label: string; value: StatsRange }[] = [
   { label: '全部', value: 'all' },
 ]
 
+const modelOptions = computed(() => {
+  const rows: any[] = stats.value.by_provider ?? []
+  return rows.map((r) => ({
+    label: `${r.provider} / ${r.model}`,
+    value: `${r.provider}\t${r.model}`,
+    provider: r.provider,
+    model: r.model,
+  }))
+})
+
+function parseSelectedModel(): { provider?: string; model?: string } {
+  if (!selectedModel.value) return {}
+  const [provider, model] = selectedModel.value.split('\t')
+  return { provider, model }
+}
+
 async function loadStats() {
-  stats.value = await rssApi.llmStats(trafficRange.value)
+  stats.value = await rssApi.llmStats(trafficRange.value, parseSelectedModel())
 }
 async function loadTimeseries() {
-  timeseries.value = await rssApi.llmTimeseries(trafficRange.value)
+  timeseries.value = await rssApi.llmTimeseries(trafficRange.value, parseSelectedModel())
 }
 async function loadTrafficStats() {
   await Promise.all([loadStats(), loadTimeseries()])
@@ -131,6 +174,27 @@ async function loadAll() {
 async function loadSyncLogs() {
   logs.value = await rssApi.syncLogs(logRange.value)
 }
+
+async function confirmDeleteModel(opt: { label: string; value: string; provider: string; model: string }) {
+  try {
+    await ElMessageBox.confirm(
+      `删除「${opt.label}」的所有统计记录？此操作不可撤销。`,
+      '删除统计记录',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await rssApi.deleteModelStats(opt.provider, opt.model)
+    if (selectedModel.value === opt.value) selectedModel.value = ''
+    await loadTrafficStats()
+    ElMessage.success('已删除')
+  } catch {
+    ElMessage.error('删除失败')
+  }
+}
+
 function selectTrafficRange(range: StatsRange) {
   trafficRange.value = range
 }
@@ -139,6 +203,10 @@ function selectLogRange(range: StatsRange) {
 }
 
 watch(trafficRange, () => {
+  loadTrafficStats()
+})
+
+watch(selectedModel, () => {
   loadTrafficStats()
 })
 
@@ -274,6 +342,8 @@ function statusLabel(status: string) {
 <style scoped>
 .stats-page {
   padding: 20px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .stats-grid {
@@ -285,6 +355,7 @@ function statusLabel(status: string) {
 .stats-summary-panel,
 .stats-log-panel {
   border-radius: 20px;
+  min-width: 0;
 }
 
 .stats-panel-head {
@@ -303,6 +374,7 @@ function statusLabel(status: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   margin-bottom: 14px;
   gap: 8px;
 }
@@ -387,6 +459,47 @@ function statusLabel(status: string) {
   font-size: 16px;
   font-weight: 800;
   letter-spacing: -0.02em;
+}
+
+.stats-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 4px;
+}
+
+.model-option-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-option-delete {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+
+.model-option-delete:hover {
+  background: color-mix(in srgb, #f4b6b6 80%, white 20%);
+  color: #8f2f2f;
 }
 
 .stats-chart-wrap {

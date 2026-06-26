@@ -1,4 +1,10 @@
-# AI 协作记录
+## 2026-06-26
+
+- 使用 AI Coding Agent 协助排查并修正统计页模型用量交互问题。
+- 统计页模型下拉中的删除按钮原先依赖展示字符串拆分 `provider / model`，导致某些模型统计记录删除失败；现已改为直接传递结构化 `provider`、`model` 参数给现有 `/api/stats/llm` 删除接口。
+- 为避免下拉弹层偶发出现在控件左侧，前端进一步为统计页 `el-select` 显式固定 `placement="bottom-start"`，关闭 fallback placements 和 teleport，使弹层稳定从控件下方展开。
+- 同步补充 `backend/tests/test_llm_provider_repository.py` 回归测试，覆盖按 `provider + model` 删除统计记录的场景。
+- 当前限制：本地 shell 直接执行 `python -m unittest` 时仍存在 `app` 模块路径未注入的问题，因此这次只完成了代码修正和测试用例补充，未在当前命令环境下完整跑通该测试文件。
 
 ## 2026-05-18
 
