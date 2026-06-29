@@ -115,15 +115,47 @@ def _serialize(vec: list[float]) -> bytes:
     return struct.pack(f"{len(vec)}f", *vec)
 
 
+def _embedding_supports_dimensions(model: str) -> bool:
+    model_key = (model or "").lower()
+    if "bge" in model_key or model_key.startswith("baai/"):
+        return False
+    return True
+
+
+def _is_dimensions_parameter_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "dimensions" in message and (
+        "unsupported" in message
+        or "not support" in message
+        or "not_supported" in message
+        or "unknown" in message
+        or "invalid" in message
+        or "extra" in message
+    )
+
+
+def _create_embedding(client: OpenAI, model: str, text: str, dim: int):
+    request = {
+        "model": model,
+        "input": text,
+    }
+    if _embedding_supports_dimensions(model):
+        request["dimensions"] = dim
+        try:
+            return client.embeddings.create(**request)
+        except Exception as exc:
+            if not _is_dimensions_parameter_error(exc):
+                raise
+            request.pop("dimensions", None)
+            return client.embeddings.create(**request)
+    return client.embeddings.create(**request)
+
+
 def _embed(text: str) -> list[float]:
     cfg = get_config()
     dim = int(cfg.get("rag_embedding_dim", EMBEDDING_DIM))
     client = OpenAI(api_key=cfg["rag_siliconflow_api_key"], base_url=cfg["rag_siliconflow_base_url"])
-    resp = client.embeddings.create(
-        model=cfg["rag_embedding_model"],
-        input=text,
-        dimensions=dim,
-    )
+    resp = _create_embedding(client, cfg["rag_embedding_model"], text, dim)
     vec = resp.data[0].embedding
     if len(vec) != dim:
         raise ValueError(

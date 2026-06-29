@@ -676,3 +676,7 @@
 - Extended the tag suggestion endpoint to use the same local keyword fallback when no default LLM Provider is configured, returning stable candidates with a `Local fallback` AI result instead of blocking the workflow.
 - Updated the AI settings translation configuration UI to remove the Tencent Hy-MT2 quick template and related front-end copy, leaving vLLM Qwen3-8B, Ollama, and OpenAI-compatible options visible.
 - Tightened AI tag fallback filtering so malformed JSON field fragments such as `tag_id`, `name`, `reason`, `candidates`, and boolean/null values are rejected instead of appearing as selectable tags.
+- Updated RAG embedding calls so BAAI/bge-m3 and other bge models do not send the optional `dimensions` parameter, while models such as text-embedding-v4 can still use it.
+- Added a retry path for embedding providers that reject `dimensions`, allowing the request to fall back to the provider's native output dimension and then rely on the existing vector length check.
+- Restored the Electron application menu with standard app/edit/view/window roles so macOS system edit shortcuts such as Cmd+C and Cmd+V work in the desktop app.
+- Changed the reader sidebar tag panel's first-run default state from expanded to collapsed while preserving any saved user preference in localStorage.

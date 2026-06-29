@@ -15,7 +15,14 @@ app.setName('Ripple')
 if (process.platform === 'win32') {
   app.setAppUserModelId('io.github.ripple.desktop')
 }
-Menu.setApplicationMenu(null)
+
+const applicationMenu = Menu.buildFromTemplate([
+  ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+  { role: 'editMenu' },
+  { role: 'viewMenu' },
+  { role: 'windowMenu' }
+])
+Menu.setApplicationMenu(applicationMenu)
 
 function appIconPath() {
   const iconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png'

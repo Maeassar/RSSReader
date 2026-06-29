@@ -128,7 +128,7 @@ export const useReaderStore = defineStore('reader', {
     articleListVisible: storedBoolean(ARTICLE_LIST_VISIBLE_KEY, true),
     filterPanelExpanded: storedBoolean(FILTER_PANEL_EXPANDED_KEY, true),
     feedPanelExpanded: storedBoolean(FEED_PANEL_EXPANDED_KEY, true),
-    tagPanelExpanded: storedBoolean(TAG_PANEL_EXPANDED_KEY, true),
+    tagPanelExpanded: storedBoolean(TAG_PANEL_EXPANDED_KEY, false),
     articleSortOrder: storedSortOrder()
   }),
   getters: {
