@@ -669,3 +669,10 @@
 - Found that the packaged backend is a PyInstaller build, while development mode runs the source backend from the local virtual environment.
 - Updated the backend packaging configuration to collect `sqlite_vec`, including its dynamic SQLite extension files, so RAG vector indexing can load the required module in the installed app.
 - Remaining limitation: the installer must be rebuilt and installed again for this packaging fix to take effect.
+- Used AI Coding Agent to simplify the Reader AI tag candidate UI by hiding the generated tag status badge while keeping candidate selection, existing-tag reuse, and new-tag creation behavior unchanged.
+- Used AI Coding Agent to harden AI tag generation against invalid JSON model responses by requesting JSON mode when supported, retrying without it when unsupported, and extracting valid JSON from common model chatter such as reasoning blocks, code fences, or surrounding prose.
+- Added a final plain-text fallback for AI tag generation so non-JSON model replies can still produce reasonable tag candidates from comma-separated labels, Chinese tag lists, or numbered recommendation lines instead of failing with a JSON parse error.
+- Strengthened the AI tag fallback again so unusable model text or model-call failures deterministically generate tag candidates from the article title, feed, body keywords, and matching existing tags rather than surfacing a "no usable tag candidates" error.
+- Extended the tag suggestion endpoint to use the same local keyword fallback when no default LLM Provider is configured, returning stable candidates with a `Local fallback` AI result instead of blocking the workflow.
+- Updated the AI settings translation configuration UI to remove the Tencent Hy-MT2 quick template and related front-end copy, leaving vLLM Qwen3-8B, Ollama, and OpenAI-compatible options visible.
+- Tightened AI tag fallback filtering so malformed JSON field fragments such as `tag_id`, `name`, `reason`, `candidates`, and boolean/null values are rejected instead of appearing as selectable tags.

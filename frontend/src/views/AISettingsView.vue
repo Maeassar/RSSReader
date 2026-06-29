@@ -168,7 +168,7 @@
           </div>
           <el-tag round effect="plain" type="success">独立配置</el-tag>
         </div>
-        <p class="section-desc">翻译模型独立于摘要、标签和 RAG Chat，可配置 Hy-MT2、Qwen 或任意 OpenAI-compatible 模型。</p>
+        <p class="section-desc">翻译模型独立于摘要、标签和 RAG Chat，可配置 Qwen、Ollama 或任意 OpenAI-compatible 模型。</p>
         <div v-if="editingTranslationProviderId" class="editing-banner">
           <div>
             <span>正在编辑</span>
@@ -204,7 +204,7 @@
               show-password
               :placeholder="editingTranslationProviderHasApiKey ? '已加密保存，留空则不修改' : '本地加密保存'"
             />
-            <span class="field-hint">腾讯 TokenHub / OpenAI-compatible API Key 可填在这里。</span>
+            <span class="field-hint">OpenAI-compatible API Key 可填在这里。</span>
           </el-form-item>
           <el-form-item label="Model">
             <el-input v-model="translationProviderForm.model" />
@@ -322,8 +322,8 @@ const RAG_DEFAULTS = {
 
 const providerTemplates = ['vLLM Qwen3-8B', 'Ollama', 'OpenAI Compatible']
 const providerTemplate = ref('vLLM Qwen3-8B')
-const translationTemplates = ['Tencent Hy-MT2', 'vLLM Qwen3-8B', 'Ollama', 'OpenAI Compatible']
-const translationTemplate = ref('Tencent Hy-MT2')
+const translationTemplates = ['vLLM Qwen3-8B', 'Ollama', 'OpenAI Compatible']
+const translationTemplate = ref('vLLM Qwen3-8B')
 
 const providers = ref<LLMProvider[]>([])
 const translationProviders = ref<TranslationProvider[]>([])
@@ -351,11 +351,11 @@ const provider = reactive({
 })
 
 const translationProviderForm = reactive({
-  name: 'Tencent Hy-MT2',
-  provider_type: 'openai_compatible' as LLMProviderType,
-  baseUrl: 'https://tokenhub.tencentmaas.com/v1',
+  name: 'Translation vLLM Qwen3-8B',
+  provider_type: 'vllm' as LLMProviderType,
+  baseUrl: 'http://127.0.0.1:8001/v1',
   apiKey: '',
-  model: 'hy-mt2-pro',
+  model: 'Qwen/Qwen3-8B',
   enabled: true,
   isDefault: true
 })
@@ -533,17 +533,7 @@ async function saveProvider() {
 
 
 function applyTranslationTemplate() {
-  if (translationTemplate.value === 'Tencent Hy-MT2') {
-    Object.assign(translationProviderForm, {
-      name: 'Tencent Hy-MT2',
-      provider_type: 'openai_compatible',
-      baseUrl: 'https://tokenhub.tencentmaas.com/v1',
-      apiKey: '',
-      model: 'hy-mt2-pro',
-      enabled: true,
-      isDefault: true
-    })
-  } else if (translationTemplate.value === 'vLLM Qwen3-8B') {
+  if (translationTemplate.value === 'vLLM Qwen3-8B') {
     Object.assign(translationProviderForm, {
       name: 'Translation vLLM Qwen3-8B',
       provider_type: 'vllm',

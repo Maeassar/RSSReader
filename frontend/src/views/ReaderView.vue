@@ -348,7 +348,6 @@
                     @click="toggleAiTagCandidate(candidate)"
                   >
                     <span>{{ candidate.name }}</span>
-                    <span class="ai-tag-badge">{{ candidate.tag_id ? '已有' : '新建' }}</span>
                   </button>
                 </div>
                 <div v-if="aiTagCandidates.length" class="ai-tag-actions">
@@ -3801,15 +3800,6 @@ async function exportNote() {
 
 .ai-tag-candidate.assigned {
   opacity: 0.74;
-}
-
-.ai-tag-badge {
-  padding: 2px 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 10%, transparent 90%);
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
 }
 
 .tag-selection-list {

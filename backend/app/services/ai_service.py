@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from app.repositories import repository
 from app.services.summary_agent import SummaryAgentError, SummaryEventHandler, SummaryOptions, summarize_with_provider
-from app.services.tag_agent import TagAgentError, suggest_tags_with_provider
+from app.services.tag_agent import TagAgentError, generate_default_tag_candidates, suggest_tags_with_provider
 from app.services.translation_agent import (
     TranslationAgentError,
     TranslationCancelled,
@@ -303,11 +303,29 @@ def translate_segment(
 
 def suggest_tags(article_id):
     article = repository.get_article(article_id)
+    tags = repository.list_tags()
     try:
         provider = repository.get_default_llm_provider()
-    except ValueError as exc:
-        raise TagAgentError("No available LLM Provider is configured. Add and enable one in AI settings first.") from exc
-    tags = repository.list_tags()
+    except ValueError:
+        candidates = generate_default_tag_candidates(article, tags)
+        saved = repository.create_ai_result(
+            article_id,
+            "tag_suggestion",
+            "Local keyword fallback; no available LLM Provider was configured.",
+            "Generated from article title, feed, body keywords, and matching existing tags.",
+            provider="Local fallback",
+            model="keyword-fallback",
+            input_tokens=0,
+            output_tokens=len(candidates),
+        )
+        return {
+            "article_id": article_id,
+            "candidates": [
+                {"name": item.name, "tag_id": item.tag_id, "reason": item.reason}
+                for item in candidates
+            ],
+            "ai_result": saved,
+        }
     result = suggest_tags_with_provider(article, tags, provider)
     saved = repository.create_ai_result(
         article_id,
