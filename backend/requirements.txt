@@ -1,0 +1,15 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+python-multipart==0.0.19
+feedparser==6.0.11
+beautifulsoup4==4.12.3
+readability-lxml==0.8.1
+markdownify==0.14.1
+SQLAlchemy==2.0.36
+pyinstaller==6.20.0
+backports.tarfile==1.2.0
+sqlite-vec==0.1.9
+zhipuai==2.1.5.20250825
+openai==2.41.0
+socksio==1.0.0

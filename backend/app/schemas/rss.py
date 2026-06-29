@@ -1,0 +1,336 @@
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field, HttpUrl
+
+
+class OperationResult(BaseModel):
+    ok: bool = True
+    message: str
+
+
+class FeedCreate(BaseModel):
+    title: str | None = None
+    url: HttpUrl
+
+
+class FeedUpdate(BaseModel):
+    title: str | None = None
+    url: HttpUrl | None = None
+    description: str | None = None
+
+
+class FeedRead(BaseModel):
+    id: int
+    title: str
+    url: str
+    site_url: str | None = None
+    description: str | None = None
+    last_sync_at: datetime | None = None
+    created_at: datetime
+
+
+class FeedCreateResult(BaseModel):
+    status: Literal["success", "partial"]
+    message: str
+    feed: FeedRead
+
+
+class FeedSyncItem(BaseModel):
+    feed_id: int | None = None
+    url: str | None = None
+    title: str | None = None
+    status: Literal["success", "failed", "skipped"]
+    message: str
+    feed: FeedRead | None = None
+
+
+class FeedSyncReport(BaseModel):
+    total: int
+    success: int
+    failed: int
+    skipped: int = 0
+    results: list[FeedSyncItem] = Field(default_factory=list)
+
+
+class FeedBatchDeleteRequest(BaseModel):
+    feed_ids: list[int] = Field(min_length=1)
+
+
+class FeedBatchDeleteItem(BaseModel):
+    feed_id: int
+    status: Literal["success", "failed", "skipped"]
+    message: str
+
+
+class FeedBatchDeleteReport(BaseModel):
+    total: int
+    success: int
+    failed: int
+    skipped: int = 0
+    results: list[FeedBatchDeleteItem] = Field(default_factory=list)
+
+
+class ArticleRead(BaseModel):
+    id: int
+    feed_id: int
+    feed_title: str
+    title: str
+    url: str
+    author: str | None = None
+    published_at: datetime | None = None
+    summary: str | None = None
+    raw_html: str | None = None
+    cleaned_html: str | None = None
+    cleaned_markdown: str | None = None
+    is_read: bool = False
+    is_starred: bool = False
+    tag_ids: list[int] = Field(default_factory=list)
+    created_at: datetime
+
+
+class ArticleListItem(BaseModel):
+    id: int
+    feed_id: int
+    feed_title: str
+    title: str
+    url: str
+    author: str | None = None
+    published_at: datetime | None = None
+    summary: str | None = None
+    is_read: bool = False
+    is_starred: bool = False
+    tag_ids: list[int] = Field(default_factory=list)
+    created_at: datetime
+
+
+class PaginatedArticles(BaseModel):
+    items: list[ArticleListItem] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class ArticleCounts(BaseModel):
+    total: int = 0
+    unread: int = 0
+    starred: int = 0
+    by_feed: dict[int, int] = Field(default_factory=dict)
+    by_tag: dict[int, int] = Field(default_factory=dict)
+
+
+class OPMLImportItem(BaseModel):
+    url: str | None = None
+    title: str | None = None
+    status: Literal["pending", "imported", "partial", "skipped", "failed"]
+    message: str
+    feed: FeedRead | None = None
+    articles: list[ArticleRead] = Field(default_factory=list)
+    source_file: str | None = None
+
+
+class OPMLImportReport(BaseModel):
+    files: int = 0
+    total: int
+    imported: int
+    partial: int = 0
+    skipped: int
+    failed: int
+    results: list[OPMLImportItem] = Field(default_factory=list)
+
+
+class TagCreate(BaseModel):
+    name: str
+    color: str = "#409eff"
+
+
+class TagUpdate(BaseModel):
+    name: str | None = None
+    color: str | None = None
+
+
+class TagRead(BaseModel):
+    id: int
+    name: str
+    color: str
+
+
+class NoteUpdate(BaseModel):
+    content_markdown: str
+
+
+class NoteRead(BaseModel):
+    id: int
+    article_id: int
+    content_markdown: str
+    updated_at: datetime
+
+
+LLMProviderType = Literal["openai_compatible", "vllm", "ollama", "custom"]
+
+
+class LLMProviderCreate(BaseModel):
+    name: str
+    provider_type: LLMProviderType = "openai_compatible"
+    base_url: str
+    api_key: str = ""
+    model: str
+    enabled: bool = True
+    is_default: bool = False
+    is_translation_default: bool = False
+
+
+class LLMProviderUpdate(BaseModel):
+    name: str | None = None
+    provider_type: LLMProviderType | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    enabled: bool | None = None
+    is_default: bool | None = None
+    is_translation_default: bool | None = None
+
+
+class LLMProviderRead(BaseModel):
+    id: int
+    name: str
+    provider_type: LLMProviderType = "openai_compatible"
+    base_url: str
+    model: str
+    enabled: bool
+    is_default: bool = False
+    is_translation_default: bool = False
+    has_api_key: bool = False
+
+
+class TranslationProviderCreate(BaseModel):
+    name: str
+    provider_type: LLMProviderType = "openai_compatible"
+    base_url: str
+    api_key: str = ""
+    model: str
+    enabled: bool = True
+    is_default: bool = False
+
+
+class TranslationProviderUpdate(BaseModel):
+    name: str | None = None
+    provider_type: LLMProviderType | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    enabled: bool | None = None
+    is_default: bool | None = None
+
+
+class TranslationProviderRead(BaseModel):
+    id: int
+    name: str
+    provider_type: LLMProviderType = "openai_compatible"
+    base_url: str
+    model: str
+    enabled: bool
+    is_default: bool = False
+    has_api_key: bool = False
+
+
+class SummaryRequest(BaseModel):
+    provider_id: int | None = None
+    refresh: bool = True
+    mode: Literal["brief", "structured", "deep"] = "structured"
+    language: str = "zh"
+    max_words: int = Field(default=450, ge=120, le=1200)
+
+
+class TranslationRequest(BaseModel):
+    provider_id: int | None = None
+    refresh: bool = True
+    target_language: str = Field(default="zh", pattern=r"^(zh|en|ja|ko|fr|de|es|pt|ru|ar)$")
+    source_language: str = "auto"
+    preserve_markdown: bool = True
+
+
+class SegmentTranslationRequest(BaseModel):
+    text: str
+    provider_id: int | None = None
+    target_language: str = Field(default="zh", pattern=r"^(zh|en|ja|ko|fr|de|es|pt|ru|ar)$")
+    source_language: str = "auto"
+    preserve_markdown: bool = True
+    preserve_html: bool = False
+
+
+class SegmentTranslationResponse(BaseModel):
+    text: str
+    input_tokens: int
+    output_tokens: int
+
+
+class AIResultRead(BaseModel):
+    id: int
+    article_id: int
+    type: Literal["summary", "translation", "tag_suggestion"]
+    provider_id: int | None = None
+    prompt: str
+    result: str
+    input_tokens: int
+    output_tokens: int
+    created_at: datetime
+    aligned_blocks: list[dict] | None = None
+
+
+class TagSuggestionCandidate(BaseModel):
+    name: str
+    tag_id: int | None = None
+    reason: str | None = None
+
+
+class TagSuggestionResponse(BaseModel):
+    article_id: int
+    candidates: list[TagSuggestionCandidate] = Field(default_factory=list)
+    ai_result: AIResultRead
+
+
+class SyncLogRead(BaseModel):
+    id: int
+    feed_id: int | None = None
+    url: str | None = None
+    feed_title: str | None = None
+    status: Literal["success", "failed", "pending"]
+    message: str
+    created_at: datetime
+
+
+class ExportRequest(BaseModel):
+    article_ids: list[int]
+
+
+class BatchDigestExportRequest(BaseModel):
+    article_ids: list[int] = Field(min_length=1)
+    include_summary: bool = False
+    include_note: bool = False
+    include_full_text: bool = False
+
+
+class BatchDigestExportResponse(BaseModel):
+    digest_title: str
+    filename: str
+    markdown: str
+    summary_available_count: int = 0
+    exported_article_ids: list[int] = Field(default_factory=list)
+    skipped_article_ids: list[int] = Field(default_factory=list)
+
+
+class SearchResultRead(BaseModel):
+    id: int
+    feed_id: int
+    feed_title: str
+    title: str
+    url: str
+    author: str | None = None
+    published_at: datetime | None = None
+    is_read: bool = False
+    is_starred: bool = False
+    title_snippet: str | None = None
+    summary_snippet: str | None = None
+    content_snippet: str | None = None

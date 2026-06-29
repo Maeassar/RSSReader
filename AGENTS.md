@@ -9,11 +9,18 @@ application is planned as a Vue 3 + Vite frontend, FastAPI backend, and SQLite
 database for RSS/Atom reading, notes, search, export, AI summary, and AI
 translation workflows.
 
-- Default branch: `main`. Base all branches and PRs against `main`.
+- During development, use `develop` as the integration branch. Base feature
+  branches and development PRs against `develop`.
+- Before final delivery, keep `main` as a documentation branch for teaching
+  assistants to review the README and project overview; do not merge daily
+  development work into `main`.
 - Keep frontend, backend, tests, and documentation in clearly named directories
   once the project scaffold is added.
 - Update `update_docs/Week{xx}_{github_name}.md` after each weekly task so later
   contributors can understand new APIs, data models, and usage notes.
+- After each AI Agent collaboration, append a dated note to
+  `docs/AI_COLLABORATION.md` describing the collaboration content, outputs, and
+  any remaining limitations.
 - Use GitHub Issues for visible collaboration and PRs for all merged changes.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, commit format, and
   PR process.
