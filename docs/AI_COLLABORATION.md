@@ -244,6 +244,15 @@
 - 为避免最后结果帧过大，流式 `result` 事件不再携带完整 prompt trace；数据库中的 `ai_results.prompt` 仍保留完整多轮 trace，便于开发排查。
 - 更新 `update_docs/Week16_GentleCold.md`，记录真实事件流实现、Ollama 测试、前端假进度问题和解决方案。
 
+## 2026-06-26
+
+- 使用 AI Coding Agent 协助推进 Week17 Translation Agent 的稳定性修复。
+- 将翻译链路从自然语言格式输出升级为结构化 JSON 队列协议：后端先把可翻译内容整理成 `[{id, text}]`，再要求模型返回 `[{id, translation}]`，最后按 id 顺序回填原文结构。
+- 为兼容历史 provider，后端仍保留旧版 `|1|` 行号格式解析作为 fallback，同时为单段翻译增加 JSON 解析、清洗和空译文兜底。
+- 新增/更新翻译相关单测，覆盖 JSON 输出、代码块包裹、缺项失败、旧格式兼容和 SSE 翻译流。
+- 当日验证：`python -m pytest tests/test_translation_agent.py tests/test_translation_stream.py -q` 通过，`python -m py_compile app/services/translation_agent.py tests/test_translation_agent.py tests/test_translation_stream.py` 通过。
+- 当前限制：虽然 JSON 队列协议明显降低了格式解析失败概率，但模型仍可能返回字段缺失；单段翻译已对空译文增加自动重试，后续如果某些 provider 仍不稳定，可以继续引入更强的 schema 校验。
+
 ## 2026-06-08（布局适配修正）
 
 - 使用 AI Coding Agent 根据界面反馈继续收敛阅读页与订阅管理页布局。

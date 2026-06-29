@@ -498,7 +498,7 @@
               ></h1>
               <!-- 标题译文（对照模式：原文下方显示译文） -->
               <div v-if="titleTranslation && titleTranslation.mode === 'comparison'" class="title-translation-row">
-                <div class="title-translation-text" v-html="renderedTitleTranslation(titleTranslation.text)"></div>
+                <h2 class="reader-title title-translation-text" v-html="renderedTitleTranslation(titleTranslation.text)"></h2>
               </div>
               <!-- 标题操作栏：hover 标题区域浮现 -->
               <div class="title-translate-bar">
@@ -2452,7 +2452,7 @@ function renderedTitleTranslation(text: string): string {
 // 翻译正文中的单一段落（通过指定 key）
 async function translateParagraphWithKey(key: string, sourceText: string, isHtml: boolean = false) {
   const prev = paragraphTranslations.value[key]
-  if (prev?.loading) return
+  if (prev?.loading) return false
   paragraphTranslations.value = {
     ...paragraphTranslations.value,
     [key]: { text: prev?.text ?? '', loading: true, mode: prev?.mode ?? 'comparison' },
@@ -2469,19 +2469,21 @@ async function translateParagraphWithKey(key: string, sourceText: string, isHtml
       ...paragraphTranslations.value,
       [key]: { text: res.text, loading: false, mode: 'comparison' },
     }
+    return true
   } catch (error) {
     paragraphTranslations.value = {
       ...paragraphTranslations.value,
       [key]: { text: prev?.text ?? '', loading: false, mode: prev?.mode ?? 'translation' },
     }
     ElMessage.error(getErrorMessage(error, '该段翻译失败，请检查 Provider 配置'))
+    return false
   }
 }
 
 // 翻译正文中的单一段落
 async function translateParagraph(articleId: number, index: number, sourceText: string, isHtml: boolean = false) {
   const key = paragraphKey(articleId, index)
-  translateParagraphWithKey(key, sourceText, isHtml)
+  return await translateParagraphWithKey(key, sourceText, isHtml)
 }
 
 // 切换某段译文的展示模式
@@ -2559,17 +2561,28 @@ async function runTranslate() {
   if (translatingAll.value) return
   translatingAll.value = true
   try {
+    let successCount = 0
+    let failedCount = 0
     // 先翻译标题（始终重新翻译以匹配新语言）
-    const titleKey = `${article.id}:title`
     if (article.title) {
-      await translateParagraphWithKey(titleKey, article.title)
+      const titleOk = await translateParagraphWithKey(`${article.id}:title`, article.title)
+      if (titleOk) successCount += 1
+      else failedCount += 1
     }
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i]
       if (!b.translatable || !b.text.trim()) continue
-      await translateParagraph(article.id, i, b.text, b.isHtml)
+      const ok = await translateParagraph(article.id, i, b.text, b.isHtml)
+      if (ok) successCount += 1
+      else failedCount += 1
     }
-    ElMessage.success('全文翻译完成')
+    if (failedCount === 0) {
+      ElMessage.success('全文翻译完成')
+    } else if (successCount > 0) {
+      ElMessage.warning(`全文翻译部分完成：${successCount} 段成功，${failedCount} 段失败`)
+    } else {
+      ElMessage.error('全文翻译失败，请检查翻译模型或稍后重试')
+    }
   } finally {
     translatingAll.value = false
   }
@@ -4083,7 +4096,8 @@ async function exportNote() {
 }
 
 .reader-title-translated {
-  color: color-mix(in srgb, var(--theme-accent) 70%, var(--app-text) 30%);
+  color: color-mix(in srgb, var(--app-text) 68%, var(--app-text-soft) 32%);
+  font-size: clamp(26px, calc(var(--reader-font-size) + 12px), 40px);
 }
 
 .title-translation-row {
@@ -4091,15 +4105,9 @@ async function exportNote() {
 }
 
 .title-translation-text {
-  font-size: clamp(20px, calc(var(--reader-font-size) + 6px), 28px);
-  line-height: 1.35;
-  letter-spacing: -0.04em;
-  color: color-mix(in srgb, var(--theme-accent) 75%, var(--app-text) 25%);
-  text-wrap: pretty;
-  padding: 8px 14px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--theme-accent) 22%, var(--app-border) 78%);
-  background: color-mix(in srgb, var(--theme-accent) 6%, var(--app-surface) 94%);
+  color: color-mix(in srgb, var(--app-text) 62%, var(--app-text-soft) 38%);
+  font-size: clamp(22px, calc(var(--reader-font-size) + 8px), 34px);
+  margin-top: 8px;
 }
 
 /* 标题翻译操作栏 */

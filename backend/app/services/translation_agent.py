@@ -8,6 +8,7 @@ import re
 import threading
 import time
 
+from bs4 import BeautifulSoup, Comment, NavigableString
 from openai import OpenAI
 
 from app.services.summary_agent import clean_model_output
@@ -153,7 +154,6 @@ _LANGUAGE_NAMES: dict[str, str] = {
     "ru": "Русский",
     "ar": "العربية",
 }
-
 
 # ============================================================
 #  Block & Sentence parsing
@@ -482,32 +482,37 @@ def _build_aligned_prompt(
     chunk: AlignedChunk,
     options: TranslationOptions,
 ) -> tuple[str, str]:
-    """Build sentence-aligned prompt with |N| line anchors."""
+    """Build a structured JSON prompt for sentence-aligned translation."""
     target = _language_display(options.target_language)
     source = _language_display(options.source_language)
     title = article.get("title") or "Untitled"
 
-    # Build numbered input lines
-    numbered_input = "\n".join(
-        f"|{i + 1}| {s.text}" for i, s in enumerate(chunk.sentences)
-    )
-    num_lines = len(chunk.sentences)
+    queue_items = [
+        {"id": i + 1, "text": s.text}
+        for i, s in enumerate(chunk.sentences)
+    ]
+    queue_json = json.dumps(queue_items, ensure_ascii=False)
+    num_lines = len(queue_items)
 
     preserve_instruction = (
         "保留原文行内的所有 Markdown 符号（**、`、[]()、标点风格）。"
         if options.preserve_markdown
+        else "如果输入包含 HTML，请仅翻译可见文本，不要破坏标签结构。"
+        if options.preserve_html
         else "输出自然流畅的纯文本译文。"
     )
 
     system_prompt = (
-        "你是 RSSReader 的逐句翻译智能体。\n"
+        "你是 RSSReader 的结构化逐句翻译智能体。\n"
         "规则：\n"
-        f"1. 严格逐行翻译，输入 {num_lines} 行则输出 {num_lines} 行，第 i 行对应第 i 行原文。\n"
-        "2. 保留原文行内的 Markdown 符号（**加粗**、`代码`、[链接]、标点风格）。\n"
-        "3. 不合并、不拆分、不增删行，不加前言/注释/解释。\n"
-        "4. 目标语言使用其习惯标点，句末标点与原文数量一致。\n"
-        "5. 遇到无法确定的专有名词，保留原文或用常见译名。\n"
-        "6. 输出必须严格以 |行号| 格式开头，每行一个译文。"
+        f"1. 输入有 {num_lines} 个项目，输出也必须有 {num_lines} 个项目。\n"
+        "2. 不合并、不拆分、不增删项目，id 必须与输入保持一致。\n"
+        "3. 保留原文行内的 Markdown 符号（**加粗**、`代码`、[链接]、标点风格）。\n"
+        "4. 如果输入包含 HTML，请仅翻译可见文本，不要破坏标签结构。\n"
+        "5. 除品牌名、产品名、URL、代码标识外，所有自然语言内容都必须完整翻译成目标语言。\n"
+        "6. 遇到无法确定的专有名词，保留原文或用常见译名。\n"
+        "7. 只输出合法 JSON，不要输出代码块、解释、前言或多余文本。\n"
+        "8. 输出格式必须是 {\"items\":[{\"id\":1,\"translation\":\"...\"}, ...]}。"
     )
 
     user_prompt = (
@@ -515,8 +520,9 @@ def _build_aligned_prompt(
         f"源语言：{source}\n"
         f"目标语言：{target}\n\n"
         f"{preserve_instruction}\n\n"
-        f"请逐行翻译，输出格式严格为 |行号|译文，禁止增删行数：\n"
-        f"{numbered_input}"
+        "待翻译队列 JSON：\n"
+        f"{queue_json}\n\n"
+        "请按原顺序返回同样数量的项目，并保持 id 一致。"
     )
     return system_prompt, user_prompt
 
@@ -526,13 +532,83 @@ def _build_aligned_prompt(
 # ============================================================
 
 def _parse_aligned_response(response_text: str, expected_lines: int) -> list[str] | None:
-    """Parse |N| prefixed response back to sentence list.
+    """Parse structured JSON translation output back to a sentence list.
 
-    Returns the translated sentences in order if every expected line was produced;
-    otherwise returns None so the caller can fall back to paragraph translation.
-    We deliberately do NOT return a partial fill with empty strings — that would
-    inject blank lines into the reassembled translation.
+    We accept the preferred JSON shape:
+    {"items":[{"id":1,"translation":"..."}, ...]}
+    and fall back to the legacy |N| format for compatibility with older providers.
+    Returns None when the output is incomplete, reordered, or contains empty items.
     """
+    text = (response_text or "").strip()
+    if not text:
+        return None
+
+    payload = _parse_json_payload(text)
+    if payload is not None:
+        parsed = _parse_structured_translation_payload(payload, expected_lines)
+        if parsed is not None:
+            return parsed
+
+    return _parse_legacy_aligned_response(text, expected_lines)
+
+
+def _parse_structured_translation_payload(payload, expected_lines: int) -> list[str] | None:
+    if isinstance(payload, dict):
+        raw_items = None
+        for key in ("items", "translations", "result", "lines"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                raw_items = value
+                break
+        if raw_items is None:
+            return None
+    elif isinstance(payload, list):
+        raw_items = payload
+    else:
+        return None
+
+    if len(raw_items) != expected_lines:
+        return None
+
+    parsed: list[str | None] = [None] * expected_lines
+    seen_ids: set[int] = set()
+
+    for index, item in enumerate(raw_items, start=1):
+        item_id = index
+        translation = ""
+        if isinstance(item, str):
+            translation = item.strip()
+        elif isinstance(item, dict):
+            raw_id = item.get("id")
+            if isinstance(raw_id, int):
+                item_id = raw_id
+            elif isinstance(raw_id, str) and raw_id.isdigit():
+                item_id = int(raw_id)
+            raw_translation = item.get("translation")
+            if raw_translation is None:
+                raw_translation = item.get("text")
+            if raw_translation is None:
+                raw_translation = item.get("translated")
+            translation = str(raw_translation).strip() if raw_translation is not None else ""
+        else:
+            return None
+
+        if not 1 <= item_id <= expected_lines:
+            return None
+        if item_id in seen_ids:
+            return None
+        if not translation:
+            return None
+        parsed[item_id - 1] = translation
+        seen_ids.add(item_id)
+
+    if any(part is None for part in parsed):
+        return None
+    return [str(part) for part in parsed]
+
+
+def _parse_legacy_aligned_response(response_text: str, expected_lines: int) -> list[str] | None:
+    """Backwards-compatible parser for the old |N| response format."""
     lines = response_text.strip().split("\n")
     parsed: list[str | None] = [None] * expected_lines
 
@@ -542,16 +618,29 @@ def _parse_aligned_response(response_text: str, expected_lines: int) -> list[str
             idx = int(m.group(1)) - 1
             if 0 <= idx < expected_lines:
                 candidate = m.group(2).strip()
-                # Only accept non-empty translations; an empty |N| means the model
-                # skipped that line, which is an alignment failure.
                 if candidate:
                     parsed[idx] = candidate
-        # blank lines between entries are ignored
 
     if all(p is not None for p in parsed):
         return [p for p in parsed]  # type: ignore[list-item]
 
     return None
+
+
+def _parse_json_payload(text: str):
+    cleaned = text.strip()
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"(\{.*\}|\[.*\])", cleaned, flags=re.S)
+        if not match:
+            return None
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return None
 
 
 # ============================================================
@@ -1011,6 +1100,7 @@ def _complete_chat(
     system_prompt: str,
     user_prompt: str,
     max_tokens: int,
+    allow_empty: bool = False,
 ) -> _Completion:
     request_args = {
         "model": provider.get("model") or "",
@@ -1026,7 +1116,7 @@ def _complete_chat(
     response = client.chat.completions.create(**request_args)
     text = response.choices[0].message.content if response.choices else ""
     text = clean_model_output(text)
-    if not text.strip():
+    if not text.strip() and not allow_empty:
         raise TranslationAgentError("模型返回了空译文，请检查模型服务是否正常。")
 
     usage = getattr(response, "usage", None)
@@ -1123,6 +1213,183 @@ class SegmentTranslationResult:
     usage: TranslationUsage
 
 
+@dataclass
+class HtmlTextNode:
+    node: NavigableString
+    leading_ws: str
+    text: str
+    trailing_ws: str
+
+
+_HTML_SKIP_TAGS = {"script", "style", "code", "pre", "kbd", "samp"}
+
+
+def _split_edge_whitespace(text: str) -> tuple[str, str, str]:
+    leading_match = re.match(r"^\s*", text)
+    trailing_match = re.search(r"\s*$", text)
+    leading = leading_match.group(0) if leading_match else ""
+    trailing = trailing_match.group(0) if trailing_match else ""
+    core_end = len(text) - len(trailing) if trailing else len(text)
+    core = text[len(leading):core_end]
+    return leading, core, trailing
+
+
+def _extract_html_text_nodes(html: str) -> tuple[BeautifulSoup, list[HtmlTextNode]]:
+    soup = BeautifulSoup(html, "html.parser")
+    text_nodes: list[HtmlTextNode] = []
+    for node in soup.descendants:
+        if not isinstance(node, NavigableString) or isinstance(node, Comment):
+            continue
+        parent_name = getattr(node.parent, "name", "") or ""
+        if parent_name.lower() in _HTML_SKIP_TAGS:
+            continue
+        raw = str(node)
+        if not raw.strip():
+            continue
+        leading_ws, core_text, trailing_ws = _split_edge_whitespace(raw)
+        if not core_text:
+            continue
+        text_nodes.append(
+            HtmlTextNode(
+                node=node,
+                leading_ws=leading_ws,
+                text=core_text,
+                trailing_ws=trailing_ws,
+            )
+        )
+    return soup, text_nodes
+
+
+def _rebuild_html_with_translations(soup: BeautifulSoup, text_nodes: list[HtmlTextNode], translations: list[str]) -> str:
+    for item, translated in zip(text_nodes, translations, strict=True):
+        item.node.replace_with(f"{item.leading_ws}{translated}{item.trailing_ws}")
+    return str(soup)
+
+
+def _build_html_segment_translation_prompt(
+    text_nodes: list[HtmlTextNode],
+    options: TranslationOptions,
+    strict_retry: bool = False,
+) -> tuple[str, str]:
+    target = _language_display(options.target_language)
+    source = _language_display(options.source_language)
+    queue_items = [
+        {"id": index + 1, "text": item.text}
+        for index, item in enumerate(text_nodes)
+    ]
+    retry_instruction = (
+        "上一次输出格式不符合要求。这一次请完整翻译全部项目，保持项目数量和顺序完全一致，只保留品牌名、产品名、URL 和代码标识。"
+        if strict_retry
+        else "除品牌名、产品名、URL 和代码标识外，所有自然语言内容都必须翻译成目标语言。"
+    )
+    system_prompt = (
+        "你是 RSSReader 的结构化 HTML 翻译智能体。"
+        "你只翻译用户提供的文本节点，不添加原文没有的事实，不写摘要，不解释翻译过程。"
+        "不要改写或解释 HTML，调用方会自己把译文塞回原标签结构。"
+        "只输出合法 JSON，不要输出代码块、解释或前言。"
+    )
+    user_prompt = (
+        f"源语言：{source}\n"
+        f"目标语言：{target}\n\n"
+        "调用方已经拆好了 HTML 文本节点。请只翻译每个 text 字段，不要补充或删减项目。\n"
+        "品牌名、产品名、URL、代码标识可以保留原文；其余自然语言必须完整翻译成目标语言。\n"
+        f"{retry_instruction}\n\n"
+        "待翻译队列 JSON：\n"
+        f"{json.dumps(queue_items, ensure_ascii=False)}\n\n"
+        '请只返回 {"items":[{"id":1,"translation":"..."}]} 这样的 JSON。'
+    )
+    return system_prompt, user_prompt
+
+
+def _build_segment_translation_prompt(
+    text: str,
+    options: TranslationOptions,
+    strict_retry: bool = False,
+) -> tuple[str, str]:
+    target = _language_display(options.target_language)
+    source = _language_display(options.source_language)
+    preserve_instruction = (
+        "**关键：保留原文的所有 HTML 标签（<a>, <strong>, <em>, <p>, <ul> 等），仅翻译可见文字内容，不改动标签属性、URL 和图片。**"
+        if options.preserve_html
+        else (
+            "保留原文行内的所有 Markdown 符号（**、`、[]()、标点风格）。"
+            if options.preserve_markdown
+            else "输出自然流畅的纯文本译文。"
+        )
+    )
+    retry_instruction = (
+        "上一次输出不符合要求。这一次请把所有可翻译的自然语言内容完整翻译成目标语言，只保留品牌名、产品名、URL 和代码标识。"
+        if strict_retry
+        else "除品牌名、产品名、URL 和代码标识外，所有自然语言内容都必须翻译成目标语言。"
+    )
+    system_prompt = (
+        "你是 RSSReader 的翻译智能体。"
+        "你只翻译用户提供的文本片段，不添加原文没有的事实，不写摘要，不解释翻译过程。"
+        "遇到无法确定的专有名词，保留原文或使用常见译名。"
+    )
+    output_instruction = (
+        "请直接输出译文 HTML，不要添加前言、注释、Markdown 代码块，也不要丢失或改写任何 HTML 标签和属性。"
+        if options.preserve_html
+        else '请直接输出译文，不要添加"以下是翻译"等前言。'
+    )
+    user_prompt = (
+        f"源语言：{source}\n"
+        f"目标语言：{target}\n\n"
+        f"{preserve_instruction}\n"
+        f"{retry_instruction}\n\n"
+        f"{output_instruction}\n\n"
+        f"待翻译文本：\n{text}"
+    )
+    return system_prompt, user_prompt
+
+
+def _translate_html_text_nodes_with_fallback(
+    client: OpenAI,
+    provider: dict,
+    text_nodes: list[HtmlTextNode],
+    options: TranslationOptions,
+) -> tuple[list[str], TranslationUsage]:
+    total_usage = TranslationUsage(0, 0)
+    translations: list[str] = []
+    plain_options = TranslationOptions(
+        target_language=options.target_language,
+        source_language=options.source_language,
+        preserve_markdown=False,
+        preserve_html=False,
+        context_window_tokens=options.context_window_tokens,
+        chunk_token_budget=options.chunk_token_budget,
+        chunk_overlap_tokens=options.chunk_overlap_tokens,
+    )
+
+    for item in text_nodes:
+        translated_text = ""
+        for attempt in range(2):
+            system_prompt, user_prompt = _build_segment_translation_prompt(
+                item.text,
+                plain_options,
+                strict_retry=attempt > 0,
+            )
+            completion = _complete_chat(
+                client,
+                provider,
+                system_prompt,
+                user_prompt,
+                _max_tokens_for_text(item.text),
+                allow_empty=True,
+            )
+            total_usage.input_tokens += completion.usage.input_tokens
+            total_usage.output_tokens += completion.usage.output_tokens
+            candidate = clean_model_output(completion.text).strip()
+            if candidate:
+                translated_text = candidate
+                break
+        if not translated_text:
+            raise TranslationAgentError("模型未能稳定完成 HTML 文本节点翻译，请重试或更换更稳定的翻译模型。")
+        translations.append(translated_text)
+
+    return translations, total_usage
+
+
 def translate_segment_with_provider(
     text: str,
     provider: dict,
@@ -1148,39 +1415,68 @@ def translate_segment_with_provider(
         raise TranslationAgentError("LLM Provider 缺少 Base URL 或模型名称。")
 
     options = options or TranslationOptions()
-    target = _language_display(options.target_language)
-    source = _language_display(options.source_language)
-
-    preserve_instruction = (
-        "**关键：保留原文的所有 HTML 标签（<a>, <strong>, <em>, <p>, <ul> 等），仅翻译可见文字内容，不改动标签属性、URL 和图片。**"
-        if options.preserve_html
-        else (
-            "保留原文行内的所有 Markdown 符号（**、`、[]()、标点风格）。"
-            if options.preserve_markdown
-            else "输出自然流畅的纯文本译文。"
-        )
-    )
-    system_prompt = (
-        "你是 RSSReader 的翻译智能体。你只翻译用户提供的文本片段，"
-        "不添加原文没有的事实，不写摘要，不解释翻译过程。"
-        "遇到无法确定的专有名词，保留原文或使用常见译名。"
-    )
-    user_prompt = (
-        f"源语言：{source}\n"
-        f"目标语言：{target}\n\n"
-        f"{preserve_instruction}\n"
-        '请直接输出译文，不要添加"以下是翻译"等前言。\n\n'
-        f"待翻译文本：\n{text}"
-    )
+    total_usage = TranslationUsage(0, 0)
+    if options.preserve_html and looks_like_html_input(text):
+        soup, text_nodes = _extract_html_text_nodes(text)
+        if not text_nodes:
+            return SegmentTranslationResult(text=str(soup), usage=total_usage)
 
     try:
         client = OpenAI(api_key=provider.get("api_key") or "EMPTY", base_url=base_url, timeout=90)
-        completion = _complete_chat(client, provider, system_prompt, user_prompt,
-                                    _max_tokens_for_text(text))
-        return SegmentTranslationResult(text=completion.text, usage=completion.usage)
+        for attempt in range(2):
+            if options.preserve_html and looks_like_html_input(text):
+                system_prompt, user_prompt = _build_html_segment_translation_prompt(
+                    text_nodes,
+                    options,
+                    strict_retry=attempt > 0,
+                )
+            else:
+                system_prompt, user_prompt = _build_segment_translation_prompt(
+                    text,
+                    options,
+                    strict_retry=attempt > 0,
+                )
+            completion = _complete_chat(
+                client,
+                provider,
+                system_prompt,
+                user_prompt,
+                _max_tokens_for_text(text),
+                allow_empty=True,
+            )
+            total_usage.input_tokens += completion.usage.input_tokens
+            total_usage.output_tokens += completion.usage.output_tokens
+
+            if options.preserve_html and looks_like_html_input(text):
+                parsed = _parse_aligned_response(completion.text, len(text_nodes))
+                if not parsed:
+                    continue
+                candidate = _rebuild_html_with_translations(soup, text_nodes, parsed)
+                return SegmentTranslationResult(text=candidate, usage=total_usage)
+
+            candidate = clean_model_output(completion.text).strip()
+            if candidate:
+                return SegmentTranslationResult(text=candidate, usage=total_usage)
+
+        if options.preserve_html and looks_like_html_input(text):
+            fallback_translations, fallback_usage = _translate_html_text_nodes_with_fallback(
+                client,
+                provider,
+                text_nodes,
+                options,
+            )
+            total_usage.input_tokens += fallback_usage.input_tokens
+            total_usage.output_tokens += fallback_usage.output_tokens
+            candidate = _rebuild_html_with_translations(soup, text_nodes, fallback_translations)
+            return SegmentTranslationResult(text=candidate, usage=total_usage)
+        raise TranslationAgentError("模型未能稳定完成翻译，请重试或更换更稳定的翻译模型。")
     except TranslationCancelled:
         raise
     except TranslationAgentError:
         raise
     except Exception as exc:
         raise TranslationAgentError(_friendly_provider_error(exc, provider)) from exc
+
+
+def looks_like_html_input(text: str) -> bool:
+    return bool(re.search(r"</?[a-z][\s\S]*>", text or "", flags=re.I))

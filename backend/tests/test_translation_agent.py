@@ -15,6 +15,10 @@ from app.services.translation_agent import (
     extract_aligned_blocks_from_prompt,
     parse_blocks,
     split_sentences,
+    translate_segment_with_provider,
+    _build_html_segment_translation_prompt,
+    _extract_html_text_nodes,
+    _rebuild_html_with_translations,
     _encode_prompt_with_aligned,
     _pack_aligned_chunks,
     _parse_aligned_response,
@@ -162,17 +166,18 @@ class AlignedPromptTest(unittest.TestCase):
             FakeChunk(),
             TranslationOptions(target_language="en"),
         )
-        self.assertIn("|1| First sentence.", user_prompt)
-        self.assertIn("|2| Second sentence.", user_prompt)
-        self.assertIn("严格逐行翻译", system_prompt)
-        self.assertIn("2 行", system_prompt)
+        self.assertIn('"id": 1', user_prompt)
+        self.assertIn('"text": "First sentence."', user_prompt)
+        self.assertIn('"items"', system_prompt)
+        self.assertIn("合法 JSON", system_prompt)
+        self.assertIn("2 个项目", system_prompt)
 
 
 class AlignedResponseParsingTest(unittest.TestCase):
     """Test Step F: _parse_aligned_response"""
 
     def test_parse_valid_response(self):
-        response = "|1| First translated\n|2| Second translated\n"
+        response = '{"items":[{"id":1,"translation":"First translated"},{"id":2,"translation":"Second translated"}]}'
         result = _parse_aligned_response(response, 2)
         self.assertIsNotNone(result)
         if result:
@@ -180,25 +185,32 @@ class AlignedResponseParsingTest(unittest.TestCase):
             self.assertEqual(result[1], "Second translated")
 
     def test_parse_with_blank_lines(self):
-        response = "|1| First\n\n|2| Second\n"
+        response = '```json\n{"items":[{"id":1,"translation":"First"},\n{"id":2,"translation":"Second"}]}\n```'
         result = _parse_aligned_response(response, 2)
         self.assertIsNotNone(result)
 
     def test_too_few_lines_returns_none(self):
-        response = "|1| Only one line\n"
+        response = '{"items":[{"id":1,"translation":"Only one line"}]}'
         result = _parse_aligned_response(response, 3)
         self.assertIsNone(result)
 
     def test_empty_translation_line_returns_none(self):
-        """An empty |N| line means the model skipped it — alignment failed."""
-        result = _parse_aligned_response("|1| first\n|2| \n|3| third", 3)
+        """An empty translation item means the model skipped it — alignment failed."""
+        result = _parse_aligned_response('{"items":[{"id":1,"translation":"first"},{"id":2,"translation":""},{"id":3,"translation":"third"}]}', 3)
         self.assertIsNone(result)
 
     def test_no_70pct_partial_fill(self):
-        """Regression: previously 70% threshold returned a list with empty strings,
-        which injected blank lines into the translation. Must return None instead."""
-        result = _parse_aligned_response("|1| a\n|2| b\n|3| c\n|4| d", 5)
+        """Regression: partial JSON list must not be accepted."""
+        result = _parse_aligned_response('{"items":[{"id":1,"translation":"a"},{"id":2,"translation":"b"},{"id":3,"translation":"c"},{"id":4,"translation":"d"}]}', 5)
         self.assertIsNone(result)
+
+    def test_legacy_pipe_format_still_works(self):
+        response = "|1| First translated\n|2| Second translated\n"
+        result = _parse_aligned_response(response, 2)
+        self.assertIsNotNone(result)
+        if result:
+            self.assertEqual(result[0], "First translated")
+            self.assertEqual(result[1], "Second translated")
 
 
 class SentenceSplittingEdgeCasesTest(unittest.TestCase):
@@ -235,7 +247,7 @@ class EmptyAlignedChunksTest(unittest.TestCase):
         class FakeChat:
             def create(self, **kwargs):
                 return SimpleNamespace(
-                    choices=[SimpleNamespace(message=SimpleNamespace(content="|1| x"))],
+                    choices=[SimpleNamespace(message=SimpleNamespace(content='{"items":[{"id":1,"translation":"x"}]}'))],
                     usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
                 )
 
@@ -276,7 +288,7 @@ class CancellationTest(unittest.TestCase):
             def create(self, **kwargs):
                 self.calls += 1
                 return SimpleNamespace(
-                    choices=[SimpleNamespace(message=SimpleNamespace(content="|1| translated"))],
+                    choices=[SimpleNamespace(message=SimpleNamespace(content='{"items":[{"id":1,"translation":"translated"}]}'))],
                     usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
                 )
 
@@ -325,7 +337,7 @@ class CancellationTest(unittest.TestCase):
                 if self.calls >= 1:
                     cancel.set()
                 return SimpleNamespace(
-                    choices=[SimpleNamespace(message=SimpleNamespace(content="|1| translated"))],
+                    choices=[SimpleNamespace(message=SimpleNamespace(content='{"items":[{"id":1,"translation":"translated"}]}'))],
                     usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
                 )
 
@@ -412,6 +424,228 @@ class ReassemblyTest(unittest.TestCase):
         result = _reassemble_translation(blocks, [(chunk, ["你好。"])])
         self.assertIn("你好。", result)
         self.assertIn("code", result)
+
+
+class SegmentTranslationTest(unittest.TestCase):
+    def _provider(self):
+        return {
+            "name": "segment-provider",
+            "provider_type": "openai_compatible",
+            "base_url": "http://127.0.0.1:11434/v1",
+            "api_key": "test-key",
+            "model": "qwen3:8b",
+            "enabled": True,
+        }
+
+    def test_segment_accepts_mixed_language_output_without_rule_rejection(self):
+        class FakeChat:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content="逛推的时候，봤던 한 업로더가说自己产品故事被大厂抄袭"))],
+                    usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = SimpleNamespace(completions=FakeChat())
+
+        with patch("app.services.translation_agent.OpenAI", FakeOpenAI):
+            result = translate_segment_with_provider(
+                "逛推的时候，看的一个up说自己产品故事被大厂抄袭",
+                self._provider(),
+                TranslationOptions(target_language="ko", source_language="zh"),
+            )
+
+        self.assertEqual(result.text, "逛推的时候，봤던 한 업로더가说自己产品故事被大厂抄袭")
+        self.assertEqual(result.usage.input_tokens, 10)
+        self.assertEqual(result.usage.output_tokens, 5)
+
+    def test_segment_retries_when_first_output_is_empty(self):
+        responses = iter([
+            "",
+            "트위터를 보다가 한 업로더가 자신의 제품 스토리가 대기업에 베꼈다고 말한 것을 봤다.",
+        ])
+
+        class FakeChat:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=next(responses)))],
+                    usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = SimpleNamespace(completions=FakeChat())
+
+        with patch("app.services.translation_agent.OpenAI", FakeOpenAI):
+            result = translate_segment_with_provider(
+                "逛推的时候，看的一个up说自己产品故事被大厂抄袭",
+                self._provider(),
+                TranslationOptions(target_language="ko", source_language="zh"),
+            )
+
+        self.assertIn("업로더", result.text)
+        self.assertEqual(result.usage.input_tokens, 20)
+        self.assertEqual(result.usage.output_tokens, 10)
+
+    def test_segment_raises_when_all_attempts_are_empty(self):
+        class FakeChat:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=""))],
+                    usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = SimpleNamespace(completions=FakeChat())
+
+        with patch("app.services.translation_agent.OpenAI", FakeOpenAI):
+            with self.assertRaisesRegex(TranslationAgentError, "未能稳定完成翻译"):
+                translate_segment_with_provider(
+                    "逛推的时候，看的一个up说自己产品故事被大厂抄袭",
+                    self._provider(),
+                    TranslationOptions(target_language="ko", source_language="zh"),
+                )
+
+    def test_segment_preserves_html_structure_by_reinserting_text_nodes(self):
+        responses = iter([
+            '{"items":[{"id":1,"translation":"Hello"},{"id":2,"translation":"world"}]}',
+        ])
+
+        class FakeChat:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=next(responses)))],
+                    usage=SimpleNamespace(prompt_tokens=8, completion_tokens=4),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = SimpleNamespace(completions=FakeChat())
+
+        with patch("app.services.translation_agent.OpenAI", FakeOpenAI):
+            result = translate_segment_with_provider(
+                "<p>你好 <strong>世界</strong></p>",
+                self._provider(),
+                TranslationOptions(target_language="en", source_language="zh", preserve_html=True, preserve_markdown=False),
+            )
+
+        self.assertEqual(result.text, '<p>Hello <strong>world</strong></p>')
+        self.assertEqual(result.usage.input_tokens, 8)
+        self.assertEqual(result.usage.output_tokens, 4)
+
+    def test_segment_html_retries_when_json_shape_is_invalid(self):
+        responses = iter([
+            '{"items":[{"id":1,"translation":"Hello"}]}',
+            '{"items":[{"id":1,"translation":"Hello"},{"id":2,"translation":"world"}]}',
+        ])
+
+        class FakeChat:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=next(responses)))],
+                    usage=SimpleNamespace(prompt_tokens=8, completion_tokens=4),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = SimpleNamespace(completions=FakeChat())
+
+        with patch("app.services.translation_agent.OpenAI", FakeOpenAI):
+            result = translate_segment_with_provider(
+                "<p>你好 <strong>世界</strong></p>",
+                self._provider(),
+                TranslationOptions(target_language="en", source_language="zh", preserve_html=True, preserve_markdown=False),
+            )
+
+        self.assertEqual(result.text, '<p>Hello <strong>world</strong></p>')
+        self.assertEqual(result.usage.input_tokens, 16)
+        self.assertEqual(result.usage.output_tokens, 8)
+
+    def test_segment_html_falls_back_to_per_node_translation(self):
+        responses = iter([
+            '{"items":[{"id":1,"translation":"Hello"}]}',
+            '{"items":[{"id":1,"translation":"Hello"}]}',
+            "Hello",
+            "world",
+        ])
+
+        class FakeChat:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=next(responses)))],
+                    usage=SimpleNamespace(prompt_tokens=8, completion_tokens=4),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = SimpleNamespace(completions=FakeChat())
+
+        with patch("app.services.translation_agent.OpenAI", FakeOpenAI):
+            result = translate_segment_with_provider(
+                "<p>你好 <strong>世界</strong></p>",
+                self._provider(),
+                TranslationOptions(target_language="en", source_language="zh", preserve_html=True, preserve_markdown=False),
+            )
+
+        self.assertEqual(result.text, '<p>Hello <strong>world</strong></p>')
+        self.assertEqual(result.usage.input_tokens, 32)
+        self.assertEqual(result.usage.output_tokens, 16)
+
+    def test_segment_html_node_fallback_retries_empty_output(self):
+        responses = iter([
+            '{"items":[{"id":1,"translation":"Hello"}]}',
+            '{"items":[{"id":1,"translation":"Hello"}]}',
+            "",
+            "Hello",
+            "",
+            "world",
+        ])
+
+        class FakeChat:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=next(responses)))],
+                    usage=SimpleNamespace(prompt_tokens=8, completion_tokens=4),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = SimpleNamespace(completions=FakeChat())
+
+        with patch("app.services.translation_agent.OpenAI", FakeOpenAI):
+            result = translate_segment_with_provider(
+                "<p>你好 <strong>世界</strong></p>",
+                self._provider(),
+                TranslationOptions(target_language="en", source_language="zh", preserve_html=True, preserve_markdown=False),
+            )
+
+        self.assertEqual(result.text, '<p>Hello <strong>world</strong></p>')
+        self.assertEqual(result.usage.input_tokens, 48)
+        self.assertEqual(result.usage.output_tokens, 24)
+
+
+class HtmlNodeTranslationHelpersTest(unittest.TestCase):
+    def test_extract_html_text_nodes_skips_code_and_whitespace(self):
+        soup, nodes = _extract_html_text_nodes('<p>你好 <strong>世界</strong> <code>x=1</code></p>')
+        self.assertEqual(str(soup), '<p>你好 <strong>世界</strong> <code>x=1</code></p>')
+        self.assertEqual([node.text for node in nodes], ["你好", "世界"])
+
+    def test_rebuild_html_with_translations_preserves_attributes(self):
+        soup, nodes = _extract_html_text_nodes('<p><a href="https://example.com">你好</a> 世界</p>')
+        html = _rebuild_html_with_translations(soup, nodes, ["Hello", "world"])
+        self.assertEqual(html, '<p><a href="https://example.com">Hello</a> world</p>')
+
+    def test_build_html_segment_translation_prompt_uses_json_queue(self):
+        soup, nodes = _extract_html_text_nodes('<p>你好 <strong>世界</strong></p>')
+        system_prompt, user_prompt = _build_html_segment_translation_prompt(
+            nodes,
+            TranslationOptions(target_language="en", source_language="zh", preserve_html=True, preserve_markdown=False),
+        )
+        self.assertIn("结构化 HTML 翻译智能体", system_prompt)
+        self.assertIn('"id": 1', user_prompt)
+        self.assertIn('"text": "你好"', user_prompt)
 
 
 class ExistingTests(unittest.TestCase):

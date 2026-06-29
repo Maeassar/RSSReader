@@ -21,7 +21,7 @@ class FakeChatCompletions:
             choices=[
                 SimpleNamespace(
                     message=SimpleNamespace(
-                        content="|1| Translated sentence."
+                        content='{"items":[{"id":1,"translation":"Translated sentence."}]}'
                     )
                 )
             ],
