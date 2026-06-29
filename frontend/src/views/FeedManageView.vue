@@ -5,7 +5,7 @@
         <h1>订阅管理</h1>
       </div>
       <div class="toolbar feed-manage-toolbar">
-        <el-button v-if="embedded" class="feed-manage-action" @click="emit('close')">关闭</el-button>
+<!--        <el-button v-if="embedded" class="feed-manage-action" @click="emit('close')">关闭</el-button>-->
         <el-button
           class="feed-manage-action"
           :icon="Refresh"

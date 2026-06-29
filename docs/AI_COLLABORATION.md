@@ -641,3 +641,18 @@
 - 后端新增服务层回归测试，确保全文翻译与段落翻译都使用独立翻译 Provider 表。
 - 验证结果：`pytest backend/tests` 90 项通过；`npm run build --prefix frontend` 通过，仍有现有 Rollup chunk size / pure annotation 警告，不阻塞 PR。
 - PR 注意事项：不要提交本地日志、数据库、虚拟环境、构建产物；`frontend/dist/index.html` 是已跟踪构建产物改动，建议本次 PR 排除，除非团队明确要求提交 dist。
+
+## 2026-06-29（Ripple 产品说明文档）
+
+- 使用 AI Coding Agent 将产品说明整理为英文默认版 `README.md` 和中文版本 `README_CN.md`，并将原 README 内容迁移到 `TEAM_COLLABRATION.md`。
+- 文档顶部采用居中 Logo、产品名、标语、徽章和语言切换入口，英文版可点击 `中文版` 跳转到中文 Markdown。
+- 根据 `docs/pics` 中补充的应用截图，在英文版和中文版中加入阅读工作台、AI 摘要、AI 设置、RAG 问答、订阅源管理和搜索截图展示区。
+- 文档覆盖产品概览、核心功能、技术架构、Windows/macOS 安装与打包部署、本地开发、AI Provider 配置、数据隐私、常见问题与 GitHub Issues 反馈入口。
+- 按用户要求避免将文档表述为课程项目成果，保持面向用户和评审者的产品化语气。
+
+## 2026-06-29（AI 摘要提示触发优化）
+
+- 使用 AI Coding Agent 调整阅读页 AI 摘要抽屉的提示触发条件。
+- 新增摘要交互状态，应用自动加载缓存摘要时不再显示“摘要内容展示不完全，请重新生成”警告。
+- 用户主动打开摘要抽屉或点击生成摘要后，摘要失败和内容不完整提示仍按原逻辑展示。
+- 前端 `npm.cmd run build` 验证通过，构建产物已恢复，未纳入本次源码改动。

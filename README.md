@@ -1,279 +1,277 @@
-# 开源软件开发与治理
+<div align="center">
+  <img src="docs/brand/ripple-logo-concept.png" alt="Ripple Logo" width="132" />
 
-## 成员
-| 姓名  | GitHub账号 | 学号          |
-|-----| ---------- |-------------|
-| 唐小卉 |https://github.com/TheadoraTang | 51285903071 |
-| 方蕴仪 |https://github.com/gloriaaa0312 | 51275903070 |
-| 洪贝贝 |https://github.com/handingna|51285903034|
-| 唐益  |https://github.com/maeassar| 51285903075 |
-| 徐治平 |https://github.com/fwunai| 51285903022 |
-| 仲韦萱 |https://github.com/bouboo1| 51285903052 |
-| 朱文韬 | https://github.com/GentleCold| 51285903136 |
-| 赖鑫  |https://github.com/specia1weak| 51285903020 |
-| 张宥  |https://github.com/sdfhjisd|             |
+  <h1>Ripple</h1>
 
-## 成员分工概览
-| 成员  | 负责时间                               | 负责模块                                     | 实际工作内容                                                             | 最终实现效果                                      |
-|-----|------------------------------------|------------------------------------------| ------------------------------------------------------------------ | ------------------------------------------- |
-| 唐小卉 | Week12、Week13、Week15、Week17、Week18 | 项目初始化和分工，RSS Reader 后端核心系统,AI标签系统搭建，测试工作 | 项目初始化（Vue/FastAPI/SQLite）、SQLite 数据模型设计、RSS/Atom Feed解析、Feed API开发 | 完成 RSS Reader 后端基础架构，支持 RSS 解析、数据存储与 API 提供 |
-| 方蕴仪 | Week13                             | RSS Reader 前端阅读系统+笔记功能开发                 | 基础阅读页面开发、Feed列表与文章展示UI、笔记功能开发                                      | 用户可以浏览 Feed、阅读文章并记录笔记                       |
-| 赖鑫 | Week14、Week18                      | 导出与项目工程化系统                               | 笔记与文章单篇/多篇导出、Markdown/PDF 导出、Bug修复与联调、Docker部署、项目文档整理              | 支持文章导出与项目部署，实现项目最终交付                        |
-| 洪贝贝 | Week14                             | RSS 订阅同步系统                               | OPML 导入导出功能、Feed Sync 同步机制、更新内容存储进 SQLite、Feed 更新调度机制              | 支持 RSS 自动同步、订阅迁移以及数据自动更新                    |
-| 仲韦萱 | Week15、Week17                      | 内容处理与阅读优化系统，Mac端功能测试                     | HTML 内容清洗模块、Markdown 转换模块、阅读主题与样式系统、文章详情渲染优化                       | 提供干净的阅读内容与更好的阅读体验                           |
-| 唐益 | Week13、Week14、Week15、Week16        | 搜索系统搭建，Mac端功能测试                          | 参与 Week13 和 Week14 的 macOS 桌面端功能测试，验证 Electron 打包、后端自动启动、用户数据目录、应用退出后的后端进程清理；Week18 继续负责导出、工程化和最终交付验证 | 支持文章导出与项目工程化交付，并补充 macOS 端桌面运行兼容性验证 |
-| 朱文韬 | Week16                             | AI Summary 后端系统                          | Summary Agent 核心开发、LLM Provider 抽象层、OpenAI-Compatible API 接入       | 支持 AI 文章摘要与多模型切换                            |
-| 徐治平 | Week16                             | 本地模型与 AI 摘要前端                            | Ollama/vLLM 本地模型支持、AI摘要结果展示页面                                      | 支持本地大模型与 AI 摘要结果展示                          |
-| 张宥  | Week17                             | AI Translation 系统                        | Translation Agent 开发、多语言支持（i18n）、AI翻译接口实现                          | 支持 AI 翻译功能与多语言阅读界面                          |
+  <p><strong>A local-first RSS reader with AI summaries, translation, notes, search, export, and RAG Q&amp;A.</strong></p>
 
-## 开发过程中的注意事项
-1. 每个人每周开发完自己的任务之后，要把自己实现的功能，包括方便后面进行开发的新产出的接口等等更新在**update_docs**中，以便后续开发的同学能够快速了解当前功能实现的细节和接口使用方式，命名方式为**Week{xx}_{github_name}.md**。
-2. 有任何问题同时在微信群和issues中提出，因为要体现**开源协作**
-3. 貌似是每周都要汇报的，每周负责报告的人就是这周负责开发功能的人（1-2个）
-4. 提交PR的时候要稍微详细一点，不要只写"update XXX文件"之类的,可以参考template中的要求
-5. 如果你想提交修改的代码，根据 [CONTRIBUTING.md](CONTRIBUTING.md) 的要求，标准流程如下:[提交流程](template_CN.md)
+  <p>
+    <a href="README_CN.md">中文版</a>
+    ·
+    <a href="https://github.com/TheadoraTang/RSSReader/issues">Report Issues</a>
+  </p>
 
-
-
-## 与AI协作的过程（参考PDF，开发过程中可以参考）
-| Stage             | 本质    | 主要目标       | 核心产物                              |
-| ----------------- | ----- | ---------- | --------------------------------- |
-| Stage1 Plan       | 架构设计  | 定义项目       | INIT.md / AGENTS.md / PLAN.md     |
-| Stage2 Build      | 迭代开发  | 构建功能       | phase plans / README / tests      |
-| Stage3 Change     | 架构迁移  | 技术栈升级      | migration docs / new architecture |
-| Stage4 Reflection | 经验复盘  | 理解 AI 边界   | lessons learned / issue docs      |
-| Stage5 Guide      | 方法论沉淀 | 建立 AI 工程体系 | engineering guide / skills        |
-
-## 几个核心概念
-| 功能                 | 在项目里的作用     |
-| ------------------ | ----------- |
-| RSS Parser         | 解析 RSS XML  |
-| Feed API           | 管理订阅源       |
-| OPML Import/Export | 导入导出订阅      |
-| Feed Sync          | 自动更新文章      |
-| SQLite             | 保存 Feed 和文章 |
-
-
-# RSS Reader Web Application 开发计划（Week12–Week18）
-
-## 技术栈：
-
-* Frontend：Vue3 + Vite
-* Backend：FastAPI
-* Database：SQLite
-* AI：OpenAI-Compatible API + 本地模型（API可以使用学校大模型的，本地模型找一个小一点的开源大模型）
-
-## 周历
-| 周历     | 时间                      |
-|--------|-------------------------|
-| Week12 | 2026/05/18 ~ 2026/05/24 |
-| Week13 | 2026/05/25 ~ 2026/05/31 | 
-| Week14 | 2026/06/01 ~ 2026/06/07 |       
-| Week15 | 2026/06/08 ~ 2026/06/14 |   
-| Week16 | 2026/06/15 ~ 2026/06/21 |       
-| Week17 | 2026/06/22 ~ 2026/06/28 |
-| Week18 | 2026/06/29 ~ 2026/07/03 |
+  <p>
+    <img alt="Platform Windows" src="https://img.shields.io/badge/Windows-supported-2563eb?style=flat-square" />
+    <img alt="Platform macOS" src="https://img.shields.io/badge/macOS-supported-111827?style=flat-square" />
+    <img alt="Frontend Vue" src="https://img.shields.io/badge/Vue_3-frontend-42b883?style=flat-square" />
+    <img alt="Backend FastAPI" src="https://img.shields.io/badge/FastAPI-backend-009688?style=flat-square" />
+    <img alt="Database SQLite" src="https://img.shields.io/badge/SQLite-local--first-0f766e?style=flat-square" />
+  </p>
+</div>
 
 ---
 
-# Week12 — 项目初始化构建
-## 本周目标
+## At a Glance
 
-完成：
+| Product | Ripple |
+| --- | --- |
+| Category | Desktop RSS/Atom Reader |
+| Platforms | Windows, macOS |
+| Data Model | Local SQLite database |
+| AI Providers | OpenAI-compatible APIs, Ollama, vLLM, custom local services |
+| Main Workflows | Subscribe, read, annotate, tag, search, export, summarize, translate, ask |
+| Feedback | <https://github.com/TheadoraTang/RSSReader/issues> |
 
-* 计划分工
-* 确定技术栈和开发计划
-* 准备汇报内容
-* 编写INIT.md / AGENTS.md / PLAN.md
+## Contents
 
-## 负责人
+- [Product Overview](#product-overview)
+- [Product Screenshots](#product-screenshots)
+- [Key Features](#key-features)
+- [Technical Architecture](#technical-architecture)
+- [Installation](#installation)
+- [Local Development](#local-development)
+- [Packaging and Deployment](#packaging-and-deployment)
+- [AI Configuration](#ai-configuration)
+- [Data and Privacy](#data-and-privacy)
+- [Troubleshooting](#troubleshooting)
+- [Feedback and Issues](#feedback-and-issues)
 
-| 时间     | 分工内容       | 负责人 |
-|--------|------------|-----|
-| Week12 | 初始化文档编写和讨论 | 唐小卉 |
----
+## Product Overview
 
-# Week13 — 项目规划与 RSS 基础呈现
+**Ripple** is a desktop RSS/Atom reader designed for personal knowledge management and continuous information tracking. It combines feed management, article reading, notes, tags, search, export, AI summaries, AI translation, and RAG-based Q&A in one local-first reading workspace.
 
-## 本周目标
+Ripple supports Windows and macOS desktop usage. Subscriptions, articles, notes, tags, and AI usage records are stored in a local SQLite database. AI providers can be configured through OpenAI-compatible APIs or local model services such as Ollama and vLLM.
 
-完成：
+<p align="center">
+  <img src="docs/pics/read.png" alt="Ripple reader view" width="860" />
+</p>
 
-* 项目初始化
-* SQLite 数据模型建立
-* RSS/Atom Feed解析
-* Feed内容存储
-* Feed内容呈现
-* 基础阅读页面
+## Product Screenshots
 
-## 负责人
+| Reading Workspace | AI Summary |
+| --- | --- |
+| <img src="docs/pics/read.png" alt="Ripple reading workspace" /> | <img src="docs/pics/summary.png" alt="Ripple AI summary" /> |
 
-| 时间     | 分工内容                      | 负责人 |
-|--------| ------------------------- |-----|
-| Week13 | 项目初始化（Vue/FastAPI/SQLite） | 唐小卉 |
-| Week13 | SQLite 数据模型实现             | 唐小卉 |
-| Week13 | RSS/Atom Feed解析模块         | 唐小卉 |
-| Week13 | Feed API开发                | 唐小卉 |
-| Week13 | 基础阅读页面开发                  | 方蕴仪 |
-| Week13 | Feed列表与文章展示UI             | 方蕴仪 |
-| Week13 | 设置里的内容（字号/深色浅色模式/不需要的内容删除） | 方蕴仪 |
-| Week13 | 笔记功能开发          | 方蕴仪 |
-| Week13 | macOS 桌面端基础功能测试：启动 Electron、加载 Vue 前端、自动启动 FastAPI 后端、读取 SQLite 用户数据目录 | 唐益 |
+| AI Settings | RAG Q&A |
+| --- | --- |
+| <img src="docs/pics/AI.png" alt="Ripple AI settings" /> | <img src="docs/pics/rag.png" alt="Ripple RAG Q&A" /> |
 
+| Feed Management | Search |
+| --- | --- |
+| <img src="docs/pics/Feed.png" alt="Ripple feed management" /> | <img src="docs/pics/search.png" alt="Ripple search" /> |
 
-## 本周交付成果
+## Key Features
 
-* RSS Reader 基础可运行版本
-* SQLite 数据持久化
-* 支持订阅 Feed
-* 支持文章列表展示
-* 支持文章阅读
-* 笔记系统
----
+| Feature | Description |
+| --- | --- |
+| Feed Management | Add, edit, delete, and batch-delete RSS/Atom feeds. |
+| Article Sync | Sync one feed, sync all feeds, run startup sync, and configure scheduled sync. |
+| OPML Import/Export | Import or export subscriptions for migration and backup. |
+| Reader View | Browse feeds, article lists, and article details; manage read/unread and starred states. |
+| Content Cleaning | Clean RSS HTML content and convert it into readable Markdown. |
+| Notes | Write personal notes for individual articles. |
+| Tags | Manage article tags while keeping AI tag suggestions under user confirmation. |
+| Search | Search historical articles and quickly locate saved reading material. |
+| Export | Export single articles or batch Markdown digests through desktop save dialogs. |
+| AI Summary | Generate article summaries with a configured LLM provider and track usage. |
+| AI Translation | Configure a dedicated translation provider; support streaming translation and comparison view. |
+| RAG Q&A | Build a vector index over subscribed articles and ask questions in natural language. |
+| Usage Statistics | Review LLM traffic, failed calls, and feed sync logs. |
+| Reading Preferences | Customize theme, palette, font size, line height, and content width. |
 
-# Week14 — OPML 与 Sync 功能开发
+## Technical Architecture
 
-## 本周目标
+| Layer | Technology |
+| --- | --- |
+| Desktop | Electron |
+| Frontend | Vue 3, Vite, Element Plus, Pinia, Vue Router |
+| Backend | FastAPI, Python |
+| Database | SQLite |
+| Packaging | Electron Builder, PyInstaller |
+| AI Integration | OpenAI-compatible API, Ollama, vLLM, local embedding services |
 
-完成：
+When the desktop app starts, Ripple launches a local backend service automatically and connects the frontend to the local API. User data is stored in the operating system's application data directory.
 
-* OPML导入导出
-* Feed同步机制
-* Feed更新调度机制
-* 数据同步优化
+## Installation
 
-## 负责人
+### Windows
 
-| 时间     | 分工内容            | 负责人 |
-|--------|-----------------|-----|
-| Week14 | OPML 导入导出功能     | 洪贝贝 |
-| Week14 | Feed Sync 同步机制  | 洪贝贝 |
-| Week14 | 更新内容存储进SQLite中  | 洪贝贝 |
-| Week14 | Feed 更新调度机制     | 洪贝贝 |
-| Week14 | 笔记以及文章单篇/多篇导出功能 | 赖鑫  |
-| Week14 | Markdown/PDF 导出 | 赖鑫  |
-| Week14 | Mac端功能测试          | 唐益  |
+1. Download the latest `Ripple Setup x.x.x.exe` from `release/` or GitHub Releases.
+2. Run the installer and follow the setup wizard.
+3. Launch **Ripple** from the desktop shortcut or Start Menu.
+4. Configure an LLM provider in AI Settings if AI features are needed.
 
+### macOS
 
----
-## 本周交付成果
+1. Download the latest `Ripple-x.x.x.dmg` from GitHub Releases.
+2. Open the `.dmg` file.
+3. Drag **Ripple** into the `Applications` folder.
+4. Launch Ripple from Launchpad or `Applications`.
+5. If macOS blocks the app, allow it in `System Settings -> Privacy & Security`.
 
-* 支持 OPML 导入导出
-* 自动同步 Feed
-* 数据持久化（入库）
-* 导出功能
+## Local Development
 
----
+### Requirements
 
-# Week15 — 内容清洗与阅读优化
+| Tool | Recommended Version |
+| --- | --- |
+| Node.js | 18+ |
+| npm | 9+ |
+| Python | 3.10+ |
+| Git | 2.40+ |
 
-## 本周目标
+### Install Dependencies
 
-完成：
+```powershell
+npm install
+npm install --prefix frontend
+python -m venv .venv1
+.\.venv1\Scripts\Activate.ps1
+pip install -r backend\requirements.txt
+```
 
-* Cleaned HTML
-* Cleaned Markdown
-* 阅读样式优化
-* Else可能的清洗格式
+### Start Desktop Development Mode
 
-## 负责人
+```powershell
+npm run dev:desktop
+```
 
-| 时间     | 分工内容              | 负责人 |
-|--------|-------------------|-----|
-| Week15 | HTML 内容清洗模块       | 仲韦萱 |
-| Week15 | Markdown 转换模块     | 仲韦萱 |
-| Week15 | 阅读主题与样式系统         | 仲韦萱 |
-| Week15 | 文章详情渲染优化          | 仲韦萱 |
-| Week15 | Mac端功能测试          | 仲韦萱 |
-| Week15 | SQLite 全文搜索（API端） | 唐益  |
-| Week15 | 搜索页面 UI           | 唐益  |
-| Week15 | Windows端功能测试          | 唐小卉  |
+This command starts:
 
-## 本周交付成果
+| Service | Default Behavior |
+| --- | --- |
+| Vite frontend | `http://127.0.0.1:5173` |
+| FastAPI backend | Automatically selects a local port |
+| Electron desktop app | Loads the frontend and connects to the backend |
 
-* 干净的 HTML 阅读内容
-* Markdown 转换能力
-* 更好的阅读体验
+### Start Web Frontend and Backend Separately
 
----
+```powershell
+cd backend
+uvicorn app.main:app --reload
+```
 
-# Week16 — AI Summary Agent 开发
+```powershell
+cd frontend
+npm run dev
+```
 
-## 本周目标
+## Packaging and Deployment
 
-完成：
+### Windows Installer
 
-* Summary Agent
-* LLM Provider 接入
-* OpenAI-Compatible API支持
+```powershell
+npm run dist:desktop
+```
 
-## 负责人
+The installer will be generated at:
 
-| 时间     | 分工内容                     | 负责人                     |
-|--------|--------------------------|-------------------------|
-| Week16 | Summary Agent 核心开发       | 朱文韬                     |
-| Week16 | LLM Provider 抽象层         | 朱文韬                     |
-| Week16 | OpenAI-Compatible API 接入 | 朱文韬                     |
-| Week16 | 本地模型支持（Ollama/vLLM）      | 徐治平                     |
-| Week16 | AI摘要结果展示页面               | 徐治平                     |
-| Week16 | Summary LLM用量统计          | 朱文韬&徐治平（有困难就不做，记得把前端删掉） |
-| Week16 | Mac端功能测试                 | 唐益                      |
-| Week16 | 已有bug修改和UI完善             | 唐小卉                     |
-| Week16 | AI标签系统搭建                 | 唐小卉                    |
-## 本周交付成果
+```text
+release/Ripple Setup x.x.x.exe
+```
 
-* AI文章摘要
-* 支持切换不同LLM
-* 支持本地大模型
-* 支持用量统计
+The Windows package includes:
 
----
+| Component | Description |
+| --- | --- |
+| Electron Shell | Desktop runtime |
+| Vue frontend build | `frontend/dist` |
+| PyInstaller backend | Bundled FastAPI backend |
+| SQLite user data | Created automatically after installation |
 
-# Week17 — Translation Agent 与扩展功能
+### macOS DMG
 
-## 本周目标
+Run the following on macOS:
 
-完成：
+```bash
+npm install
+npm install --prefix frontend
+python3 -m venv .venv1
+source .venv1/bin/activate
+pip install -r backend/requirements.txt
+npm run dist:desktop
+```
 
-* Translation Agent
-* 多语言支持
-* AI统计功能
+The DMG file will be generated at:
 
-## 负责人
+```text
+release/Ripple-x.x.x.dmg
+```
 
-| 时间     | 分工内容                 | 负责人 |
-|--------| -------------------- | --- |
-| Week17 | Translation Agent 开发（需支持本地+API调用，可参考上周的实现方式） | 张宥 |
-| Week17 | 多语言支持（i18n）          | 张宥 |
-| Week17 | AI翻译接口实现             | 张宥 |
-| Week17 | Summary LLM用量统计        | 张宥（有困难就不做，记得把前端删掉） |
-| Week17 | Mac端功能测试          | 仲韦萱 |
+macOS packaging notes:
 
-## 本周交付成果
+| Item | Description |
+| --- | --- |
+| Build platform | Build the DMG on macOS whenever possible. |
+| Python backend | Bundled with PyInstaller and shipped with the app. |
+| Signing and notarization | Recommended for public distribution. |
+| First launch warning | Unsigned builds may require manual approval in Privacy & Security settings. |
 
-* AI翻译功能
-* 多语言界面
-* 多语言阅读支持
+## AI Configuration
 
----
+Open **AI Settings** in the app to configure:
 
-# Week18 — 项目汇总与最终交付
+| Configuration | Purpose |
+| --- | --- |
+| General AI Provider | Used for summaries, AI tag suggestions, and RAG Chat. |
+| Translation Provider | Used for article translation and comparison reading. |
+| Embedding Settings | Used for the RAG article index. |
 
-## 本周目标
+Supported provider types:
 
-完成：
+| Type | Example |
+| --- | --- |
+| OpenAI-compatible | OpenAI, DeepSeek-compatible services, TokenHub-compatible services |
+| vLLM Local | `http://127.0.0.1:8001/v1` |
+| Ollama | `http://127.0.0.1:11434/v1` |
+| Custom | Custom compatible endpoint |
 
-* 项目测试
-* Docker部署
-* 文档整理
-* 最终演示
+API keys are encrypted locally. When editing a provider, leaving the API Key field empty keeps the existing key unchanged.
 
-## 负责人
+## Data and Privacy
 
-| 时间     | 分工内容                     | 负责人         |
-| ------ |--------------------------|-------------|
-| Week18 | Bug修复与联调                 | 赖鑫          |
-| Week18 | 项目文档（文档要规范，比如AGENTS.md,INIT.md）整理                   | 赖鑫          |
-| Week18 | Mac端功能测试                 | 赖鑫         |
-| Week18 | Windows端功能测试          | 唐小卉  |
-| Week18 | PPT和汇报                   | 所有成员负责自己的板块 |
+| Data | Storage |
+| --- | --- |
+| Feeds, articles, notes, tags | Local SQLite database |
+| AI provider settings | Local database with encrypted keys |
+| AI usage logs | Local database |
+| Exported files | User-selected local path |
+
+Ripple is local-first by default. Reading data is only sent to external AI services when the user explicitly configures and uses a third-party AI provider.
+
+## Troubleshooting
+
+| Issue | Suggested Action |
+| --- | --- |
+| Feed sync fails | Check whether the Feed URL is reachable and review sync logs. |
+| AI summary or translation fails | Verify Base URL, model name, API Key, and proxy settings. |
+| RAG Q&A has no answer | Build the article index before asking questions. |
+| Windows icon does not refresh | Reinstall the latest build and remove old desktop shortcuts if needed. |
+| macOS blocks the app | Allow it in Privacy & Security settings, or use a signed build. |
+
+## Feedback and Issues
+
+Please report bugs, installation failures, AI provider issues, and feature requests through GitHub Issues:
+
+<https://github.com/TheadoraTang/RSSReader/issues>
+
+Recommended information:
+
+| Information | Example |
+| --- | --- |
+| Operating system | Windows 11 / macOS 14 |
+| Ripple version | `0.1.5` |
+| Problem | Sync failure, UI error, AI call failure |
+| Reproduction steps | 1. Open page; 2. Click button; 3. Error appears |
+| Logs or screenshots | Sync logs, console errors, screenshots |

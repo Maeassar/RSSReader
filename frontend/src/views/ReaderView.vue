@@ -472,7 +472,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="digest">导出文摘</el-dropdown-item>
-                <el-dropdown-item command="markdown">导出清洗后 Markdown</el-dropdown-item>
+                <el-dropdown-item command="markdown">导出全文</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -869,6 +869,7 @@ const summaryFailed = ref(false)
 const summaryStepItems = ref<SummaryThoughtStep[]>([])
 const summaryDrawerRef = ref<HTMLElement | null>(null)
 const summaryResultVisible = ref(false)
+const summaryUserInteracted = ref(false)
 const copyDone = ref(false)
 
 // 翻译相关状态
@@ -969,6 +970,7 @@ function onDrawerDragStart(e: MouseEvent) {
 const summaryDrawerTitle = computed(() => 'AI 摘要')
 
 function toggleSummaryDrawer() {
+  summaryUserInteracted.value = true
   summaryDrawerOpen.value = !summaryDrawerOpen.value
 }
 
@@ -1153,6 +1155,7 @@ const renderedAiResult = computed(() => {
 })
 
 const summaryIncomplete = computed(() => {
+  if (!summaryUserInteracted.value) return false
   if (!aiResult.value) return false
   const text = aiResult.value.replace(/^可信度[：:].+$/gm, '').trim()
   // 只有明确的截断迹象才报警：末尾是省略号、逗号、分号、冒号，或以空格结尾
@@ -2243,11 +2246,13 @@ function clearSummaryResult() {
   summaryActiveArticleId.value = null
   summaryFailed.value = false
   summaryResultVisible.value = false
+  summaryUserInteracted.value = false
 }
 
 async function runSummary() {
   const articleId = store.selectedArticle?.id
   if (!articleId) return
+  summaryUserInteracted.value = true
   summaryRunning.value = true
   summaryFailed.value = false
   summaryDrawerOpen.value = true

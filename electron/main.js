@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, net: electronNet, protocol, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, net: electronNet, protocol, shell } = require('electron')
 const { spawn } = require('child_process')
 const fs = require('fs/promises')
 const http = require('http')
@@ -12,11 +12,16 @@ let backendProcess = null
 let apiBaseUrl = process.env.RSSREADER_BACKEND_URL || ''
 
 app.setName('Ripple')
+if (process.platform === 'win32') {
+  app.setAppUserModelId('io.github.ripple.desktop')
+}
+Menu.setApplicationMenu(null)
 
 function appIconPath() {
+  const iconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
   return app.isPackaged
-    ? path.join(app.getAppPath(), 'build', 'icon.png')
-    : path.join(__dirname, '..', 'build', 'icon.png')
+    ? path.join(app.getAppPath(), 'build', iconName)
+    : path.join(__dirname, '..', 'build', iconName)
 }
 
 function settingsFilePath() {
@@ -289,6 +294,7 @@ async function createWindow() {
   const mainWindow = new BrowserWindow({
     title: 'Ripple',
     icon: appIconPath(),
+    autoHideMenuBar: true,
     width: 1280,
     height: 820,
     minWidth: 960,
